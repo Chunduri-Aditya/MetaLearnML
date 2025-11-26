@@ -1,0 +1,33 @@
+# Per-model hyperparameter configurations
+# These override base_config values for each model
+
+mlp_small:
+  lr: 0.001
+  epochs: 40
+  patience: 7  # early stopping patience
+
+mlp_medium:
+  lr: 0.0005
+  epochs: 50
+  patience: 10
+
+mlp_deep:
+  lr: 0.0003
+  epochs: 60
+  patience: 10
+
+mlp_small_reg:
+  lr: 0.001
+  epochs: 40
+  patience: 7
+
+mlp_medium_reg:
+  lr: 0.0005
+  epochs: 50
+  patience: 10
+
+mlp_deep_reg:
+  lr: 0.0003
+  epochs: 60
+  patience: 10
+

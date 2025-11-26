@@ -1,0 +1,34 @@
+# Preprocessing strategies for dataset-agnostic AutoML
+# Each strategy is a bundle of preprocessing choices
+
+preprocessing_strategies:
+  basic_numeric_only:
+    numeric_imputer: "median"
+    scaler: "standard"
+    categorical_imputer: null
+    encoder: null
+    text_mode: null
+
+  numeric_plus_cat_onehot:
+    numeric_imputer: "median"
+    scaler: "standard"
+    categorical_imputer: "most_frequent"
+    encoder: "onehot"
+    text_mode: null
+
+  robust_numeric:
+    numeric_imputer: "median"
+    scaler: "robust"
+    categorical_imputer: "most_frequent"
+    encoder: "onehot"
+    text_mode: null
+
+  text_tfidf_basic:
+    numeric_imputer: null
+    scaler: null
+    categorical_imputer: null
+    encoder: null
+    text_mode: "tfidf"
+    max_features: 5000
+    ngram_range: [1, 2]
+
