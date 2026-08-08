@@ -60,7 +60,7 @@ def split_and_create_loaders(
 def compute_meta_features_safe(dataset: TensorDataset, in_dim: int, out_dim: int, n_samples: int) -> Optional[Dict]:
     """Safely compute meta-features with error handling."""
     try:
-        from meta.meta_features import compute_meta_features_from_dataset
+        from examples.meta_features import compute_meta_features_from_dataset
         return compute_meta_features_from_dataset(dataset, in_dim, out_dim, n_samples)
     except Exception as e:
         print(f"[WARN] Could not compute meta-features: {e}")
@@ -477,7 +477,7 @@ def run_custom_csv_threshold_experiment():
     print(f"[INFO] Target metric: {target_metric:.4f}\n")
 
     # === Compute meta-features for proxy ===
-    from meta.meta_features import compute_meta_features_from_csv
+    from examples.meta_features import compute_meta_features_from_csv
     
     try:
         if mode == "numeric":
@@ -862,7 +862,7 @@ def main_cli():
         run_custom_csv_threshold_experiment()
         return
     elif choice == "7":
-        from stress_test import run_all_stress_tests
+        from examples.stress_test import run_all_stress_tests
         run_all_stress_tests()
         return
     elif choice == "8":

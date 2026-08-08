@@ -25,14 +25,24 @@ def _load_best_from_csv(results_csv: str) -> Tuple[str, float, str]:
     with path.open("r") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            metric = float(row["metric"])
-            if best_row is None or metric > float(best_row["metric"]):
+            metric_str = row.get("metric", row.get("metric_value", ""))
+            if metric_str in ("", None):
+                continue
+            metric = float(metric_str)
+            if best_row is None:
                 best_row = row
+                best_row["_metric"] = metric
+            elif metric > float(best_row["_metric"]):
+                best_row = row
+                best_row["_metric"] = metric
 
     if best_row is None:
         raise RuntimeError(f"No rows found in {results_csv}")
 
-    return best_row["model_name"], float(best_row["metric"]), best_row["checkpoint_path"]
+    checkpoint_path = best_row.get("checkpoint_path", best_row.get("ckpt_path", ""))
+    if not checkpoint_path:
+        raise RuntimeError(f"Checkpoint path missing in best row for {results_csv}")
+    return best_row["model_name"], float(best_row["_metric"]), checkpoint_path
 
 
 class BestModelPredictor:
@@ -118,4 +128,3 @@ class BestModelPredictor:
         probs = self.predict_proba(x)
         preds = torch.argmax(probs, dim=1)
         return preds
-

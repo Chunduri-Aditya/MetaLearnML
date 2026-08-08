@@ -20,6 +20,7 @@ from engine.preprocessing_strategies import (
     rank_preprocessors_by_proxy,
     PreprocessingStrategy,
 )
+from utils.logging_utils import init_results_file, log_result
 
 
 def _evaluate_candidate_wrapper(
@@ -33,12 +34,13 @@ def _evaluate_candidate_wrapper(
     dataset_meta: Dict,
     device: str,
     model_cfgs: Dict,
-) -> Tuple[str, str, float, Optional[Dict]]:
+    ckpt_dir: str,
+) -> Tuple[str, str, float, Optional[Dict], Optional[str]]:
     """
     Wrapper function for parallel candidate evaluation.
     
     Returns:
-        (model_name, preprocessing_name, metric, best_info_dict)
+        (model_name, preprocessing_name, metric, best_info_dict, ckpt_path)
     """
     model_name, strategy = candidate
     
@@ -113,19 +115,35 @@ def _evaluate_candidate_wrapper(
             device=device,
             config=config,
         )
+
+        # Save checkpoint
+        ckpt_dir_path = Path(ckpt_dir)
+        ckpt_dir_path.mkdir(parents=True, exist_ok=True)
+        backend = MODEL_REGISTRY.get(model_name, {}).get("backend", "torch")
+        ckpt_path = ckpt_dir_path / f"{strategy.name}_{model_name}_best.pth"
+        if backend == "sklearn":
+            from models.sk_models import SkLearnWrapper
+            if isinstance(model, SkLearnWrapper):
+                import joblib
+                sk_path = ckpt_dir_path / f"{strategy.name}_{model_name}_best.joblib"
+                joblib.dump(model, sk_path, compress=3)
+                ckpt_path = sk_path
+        else:
+            torch.save(best_state, ckpt_path, _use_new_zipfile_serialization=True)
         
         best_info = {
             "model_name": model_name,
             "preprocessing_name": strategy.name,
             "metric": metric,
             "metric_name": metric_name,
+            "ckpt_path": str(ckpt_path),
         }
         
-        return (model_name, strategy.name, metric, best_info)
+        return (model_name, strategy.name, metric, best_info, str(ckpt_path))
     
     except Exception as e:
         # Return failure indicator
-        return (model_name, strategy.name, float("-inf"), None)
+        return (model_name, strategy.name, float("-inf"), None, None)
 
 
 def run_intelligent_search_parallel(
@@ -228,6 +246,14 @@ def run_intelligent_search_parallel(
     indices = torch.randperm(n_samples)
     train_indices = indices[:n_train].tolist()
     val_indices = indices[n_train:].tolist()
+
+    # Initialize results
+    results_csv = "experiments/results.csv"
+    results_path = Path(results_csv)
+    if results_path.exists():
+        results_path.unlink()
+    init_results_file(results_csv, include_meta_features=True)
+    ckpt_dir = "saved_models"
     
     # Load model configs
     models_config_path = Path("configs/models.yaml")
@@ -251,7 +277,7 @@ def run_intelligent_search_parallel(
         sklearn_results = Parallel(n_jobs=n_jobs, backend="threading")(
             delayed(_evaluate_candidate_wrapper)(
                 candidate, X_df, y, train_indices, val_indices, task_type,
-                metric_name, dataset_meta, device, model_cfgs
+                metric_name, dataset_meta, device, model_cfgs, ckpt_dir
             )
             for candidate in sklearn_candidates
         )
@@ -263,7 +289,7 @@ def run_intelligent_search_parallel(
         for candidate in torch_candidates:
             result = _evaluate_candidate_wrapper(
                 candidate, X_df, y, train_indices, val_indices, task_type,
-                metric_name, dataset_meta, device, model_cfgs
+                metric_name, dataset_meta, device, model_cfgs, ckpt_dir
             )
             results.append(result)
     
@@ -272,10 +298,28 @@ def run_intelligent_search_parallel(
     best_info = None
     tried = []
     
-    for model_name, prep_name, metric, info in results:
+    for model_name, prep_name, metric, info, ckpt_path in results:
         if metric > float("-inf"):
             tried.append((model_name, prep_name, metric))
             print(f"[INFO] {prep_name} + {model_name}: {metric_name}={metric:.4f}")
+
+            log_result(
+                path=results_csv,
+                model_name=model_name,
+                metric=metric,
+                ckpt_path=ckpt_path or "",
+                dataset_name=dataset_meta.get("dataset_name", "unknown_dataset"),
+                meta_features={
+                    "n_samples": dataset_meta.get("n_samples", ""),
+                    "n_features": dataset_meta.get("n_features", ""),
+                    "n_numeric": dataset_meta.get("n_numeric", ""),
+                    "n_categorical": dataset_meta.get("n_categorical", ""),
+                    "n_classes": dataset_meta.get("n_classes", ""),
+                    "class_imbalance": dataset_meta.get("class_imbalance", ""),
+                },
+                model_family=MODEL_REGISTRY[model_name].get("family", ""),
+                metric_name=metric_name,
+            )
             
             if metric > best_metric:
                 best_metric = metric
@@ -291,4 +335,3 @@ def run_intelligent_search_parallel(
         "tried": tried,
         "reached_target": target_metric is not None and best_metric >= target_metric if best_info else False,
     }
-

@@ -114,6 +114,7 @@ def train_sklearn_model(
     Sklearn models don't use epochs/optimizers - they fit once on all data.
     """
     metric_fn = config["metric_fn"]
+    task_type = config.get("task_type", "classification")
     
     # Collect all training data
     X_train = []
@@ -130,7 +131,7 @@ def train_sklearn_model(
     model.fit(X_train, y_train)
     
     # Evaluate on validation set
-    metric = evaluate(model, val_loader, device, metric_fn)
+    metric = evaluate(model, val_loader, device, metric_fn, task_type=task_type)
     
     # For sklearn models, we return a dummy state dict (they don't use PyTorch state)
     # The model itself holds the sklearn model state
@@ -187,5 +188,6 @@ def evaluate(model: nn.Module, data_loader, device: str, metric_fn, task_type: s
     preds = torch.cat(all_preds, dim=0)
     targets = torch.cat(all_targets, dim=0)
 
+    if task_type == "regression":
+        return metric_fn(targets, preds)
     return metric_fn(preds, targets)
-

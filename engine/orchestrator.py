@@ -44,6 +44,8 @@ def run_automl(config: AutoMLConfig) -> Dict[str, Any]:
     y = dataset_info["y"]
     meta = dataset_info["meta"]
     dataset_name = dataset_info["dataset_name"] or config.dataset_name or Path(config.csv_path).stem
+    search_meta = dict(meta)
+    search_meta["dataset_name"] = dataset_name
     
     print(f"[INFO] Task type: {task_type}")
     print(f"[INFO] Dataset: {dataset_name}")
@@ -72,7 +74,7 @@ def run_automl(config: AutoMLConfig) -> Dict[str, Any]:
             y=y,
             task_type=task_type,
             metric_name=metric_name,
-            dataset_meta=meta,
+            dataset_meta=search_meta,
             device=config.device,
             target_metric=config.target_metric,
             max_models=config.max_candidates,
@@ -87,7 +89,7 @@ def run_automl(config: AutoMLConfig) -> Dict[str, Any]:
             y=y,
             task_type=task_type,
             metric_name=metric_name,
-            dataset_meta=meta,
+            dataset_meta=search_meta,
             device=config.device,
             target_metric=config.target_metric,
             max_models=config.max_candidates,
@@ -227,4 +229,3 @@ def run_automl(config: AutoMLConfig) -> Dict[str, Any]:
         "report_paths": report_paths,
         "time_taken": time_taken,
     }
-

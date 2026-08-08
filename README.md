@@ -23,10 +23,17 @@ This is a **dataset-agnostic thinking machine** that:
 ```bash
 # Clone the repository
 git clone <your-repo-url>
-cd AutoMLProject
+cd MetaLearnML
 
-# Install dependencies
-pip install -r requirements.txt
+# Recommended: isolated environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install runtime + dev dependencies
+pip install -r requirements-dev.txt
+
+# Optional convenience command
+make setup
 ```
 
 ### Basic Usage
@@ -44,10 +51,30 @@ python main.py --autopilot data/adult.csv --label income --metric accuracy
 python main.py --autopilot data/paddydataset.csv --metric r2
 ```
 
+### Testing
+
+```bash
+# Run default test suite
+pytest -q
+# or
+make test
+
+# Run Neo4j integration test only when explicitly enabled
+RUN_NEO4J_TESTS=1 pytest -q test_neo4j.py
+```
+
+### Environment Variables
+
+Use `.env.example` as a template:
+
+```bash
+cp .env.example .env
+```
+
 ## 📁 Project Structure
 
 ```
-AutoMLProject/
+MetaLearnML/
 ├── main.py                          # CLI entry point
 ├── engine/
 │   ├── orchestrator.py              # Main pipeline coordinator
@@ -336,7 +363,10 @@ docker run -d \
   -e NEO4J_AUTH=neo4j/password \
   neo4j:latest
 
-# The orchestrator automatically logs runs to Neo4j
+# Set credentials for logging/integration tests
+export NEO4J_URI=neo4j://127.0.0.1:7687
+export NEO4J_USER=neo4j
+export NEO4J_PASSWORD=password
 ```
 
 **Graph Schema**:
@@ -349,6 +379,8 @@ docker run -d \
 ```bash
 # Start web app
 uvicorn web.app:app --reload
+# or
+make web
 
 # Query API
 curl http://localhost:8000/datasets

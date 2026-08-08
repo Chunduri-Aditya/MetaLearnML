@@ -178,7 +178,7 @@ class MetaLearner:
                 
                 model_name = row.get("model_name", "")
                 preprocessing_name = row.get("preprocessing_name", "basic_numeric_only")
-                metric_value = row.get("metric", 0)
+                metric_value = row.get("metric", row.get("metric_value", 0))
                 
                 features = self.extract_features(dataset_meta, model_name, preprocessing_name)
                 X_list.append(features)
@@ -339,4 +339,3 @@ class MetaLearner:
             ranked.append((model_name, preprocessing_name, 0.0))
         
         return ranked
-

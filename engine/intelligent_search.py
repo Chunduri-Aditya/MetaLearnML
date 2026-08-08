@@ -19,7 +19,7 @@ from engine.preprocessing_strategies import (
     rank_preprocessors_by_proxy,
     PreprocessingStrategy,
 )
-from utils.logging_utils import init_results_file_with_preprocessing, log_result_with_preprocessing
+from utils.logging_utils import init_results_file, log_result
 
 
 def run_intelligent_search(
@@ -137,7 +137,10 @@ def run_intelligent_search(
     
     # Initialize results
     results_csv = "experiments/results.csv"
-    init_results_file_with_preprocessing(results_csv)
+    results_path = Path(results_csv)
+    if results_path.exists():
+        results_path.unlink()
+    init_results_file(results_csv, include_meta_features=True)
     
     # Load model configs
     models_config_path = Path("configs/models.yaml")
@@ -242,6 +245,24 @@ def run_intelligent_search(
                     ckpt_path = sk_path
             else:
                 torch.save(best_state, ckpt_path, _use_new_zipfile_serialization=True)
+
+            log_result(
+                path=results_csv,
+                model_name=model_name,
+                metric=metric,
+                ckpt_path=str(ckpt_path),
+                dataset_name=dataset_meta.get("dataset_name", "unknown_dataset"),
+                meta_features={
+                    "n_samples": dataset_meta.get("n_samples", ""),
+                    "n_features": dataset_meta.get("n_features", ""),
+                    "n_numeric": dataset_meta.get("n_numeric", ""),
+                    "n_categorical": dataset_meta.get("n_categorical", ""),
+                    "n_classes": dataset_meta.get("n_classes", ""),
+                    "class_imbalance": dataset_meta.get("class_imbalance", ""),
+                },
+                model_family=MODEL_REGISTRY[model_name].get("family", ""),
+                metric_name=metric_name,
+            )
             
             tried.append((model_name, strategy.name, metric))
             
@@ -270,4 +291,3 @@ def run_intelligent_search(
         "tried": tried,
         "reached_target": target_metric is not None and best_metric >= target_metric if best_info else False,
     }
-

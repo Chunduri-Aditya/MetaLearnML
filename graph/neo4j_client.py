@@ -7,7 +7,6 @@ Stores experiments as a knowledge graph for querying and analysis.
 from neo4j import GraphDatabase
 from dataclasses import dataclass
 from typing import Dict, Optional, List, Any
-from pathlib import Path
 import os
 
 
@@ -16,7 +15,7 @@ class Neo4jConfig:
     """Configuration for Neo4j connection."""
     uri: str = "neo4j://127.0.0.1:7687"
     user: str = "neo4j"
-    password: str = "1a77f6fa-65ba-4b5e-b4e8-970d6c27b067"
+    password: Optional[str] = None
     
     @classmethod
     def from_env(cls):
@@ -24,7 +23,7 @@ class Neo4jConfig:
         return cls(
             uri=os.getenv("NEO4J_URI", "neo4j://127.0.0.1:7687"),
             user=os.getenv("NEO4J_USER", "neo4j"),
-            password=os.getenv("NEO4J_PASSWORD", "1a77f6fa-65ba-4b5e-b4e8-970d6c27b067"),
+            password=os.getenv("NEO4J_PASSWORD"),
         )
 
 
@@ -52,6 +51,11 @@ class Neo4jGraph:
     
     def _connect(self):
         """Connect to Neo4j database."""
+        if not self.config.password:
+            print("[WARN] NEO4J_PASSWORD is not set. Graph logging will be disabled.")
+            self.driver = None
+            return
+
         try:
             # Neo4j driver typically uses bolt:// for direct connections
             # Convert neo4j:// to bolt:// if needed
@@ -262,4 +266,3 @@ class Neo4jGraph:
             task_type=task_type,
             limit=limit,
         )
-

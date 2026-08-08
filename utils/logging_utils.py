@@ -92,7 +92,7 @@ def init_results_file_with_preprocessing(path: str):
                 "model_family",
                 "model_name",
                 "metric_name",
-                "metric_value",
+                "metric",
                 "checkpoint_path",
                 "seed",
             ])
@@ -123,28 +123,56 @@ def log_result_with_preprocessing(
     """
     run_id = str(uuid.uuid4())[:8]  # Short UUID
     metric_name = base_config.get("metric_name", "")
+
+    def _get_attr(obj, *names, default=""):
+        for name in names:
+            if hasattr(obj, name):
+                value = getattr(obj, name)
+                if value is not None:
+                    return value
+        return default
+
+    descriptor_name = _get_attr(descriptor, "name", default="")
+    descriptor_n_samples = _get_attr(descriptor, "n_samples", default="")
+    descriptor_n_features = _get_attr(descriptor, "n_features", default="")
+    descriptor_target_type = _get_attr(descriptor, "target_type", default="")
+    descriptor_n_classes = _get_attr(descriptor, "n_classes", default="")
+    descriptor_meta = _get_attr(descriptor, "meta", default={}) or {}
+
+    preprocessing_name = _get_attr(
+        preprocessing_config,
+        "name",
+        default=_get_attr(candidate, "preprocessing_name", default=""),
+    )
+    numeric_imputer = _get_attr(preprocessing_config, "numeric_imputer", default="")
+    scaler = _get_attr(preprocessing_config, "scaler", "numeric_scaler", default="")
+    categorical_imputer = _get_attr(preprocessing_config, "categorical_imputer", default="")
+    encoder = _get_attr(preprocessing_config, "encoder", "categorical_encoder", default="")
+    text_mode = _get_attr(preprocessing_config, "text_mode", default="")
+
+    candidate_family = _get_attr(candidate, "family", default="")
+    candidate_model_name = _get_attr(candidate, "model_name", default="")
     
     with open(results_csv, "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
             run_id,
-            descriptor.name,
-            descriptor.n_samples,
-            descriptor.n_features,
-            descriptor.target_type,
-            descriptor.n_classes,
-            descriptor.meta.get("class_imbalance", ""),
-            preprocessing_config.name,
-            preprocessing_config.numeric_imputer or "",
-            preprocessing_config.scaler or "",
-            preprocessing_config.categorical_imputer or "",
-            preprocessing_config.encoder or "",
-            preprocessing_config.text_mode or "",
-            candidate.family,
-            candidate.model_name,
+            descriptor_name,
+            descriptor_n_samples,
+            descriptor_n_features,
+            descriptor_target_type,
+            descriptor_n_classes,
+            descriptor_meta.get("class_imbalance", ""),
+            preprocessing_name,
+            numeric_imputer,
+            scaler,
+            categorical_imputer,
+            encoder,
+            text_mode,
+            candidate_family,
+            candidate_model_name,
             metric_name,
             metric,
             ckpt_path,
             seed or "",
         ])
-
