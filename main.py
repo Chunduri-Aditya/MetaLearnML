@@ -1,9 +1,10 @@
 import os
-import torch
-import pandas as pd
+from collections.abc import Callable
 from pathlib import Path
-from typing import Tuple, Dict, Optional, Callable
-from torch.utils.data import DataLoader, random_split, TensorDataset
+
+import pandas as pd
+import torch
+from torch.utils.data import DataLoader, TensorDataset, random_split
 
 # Legacy import - kept for backward compatibility
 # New code should use engine.orchestrator.run_automl()
@@ -12,11 +13,15 @@ try:
 except ImportError:
     # Fallback if legacy module not found
     def run_model_search(*args, **kwargs):
-        raise NotImplementedError("Legacy search_controller moved to engine.legacy. Use engine.orchestrator.run_automl() instead.")
-from engine.evaluator import accuracy_metric, f1_macro_metric, confusion_matrix_for_model
+        raise NotImplementedError(
+            "Legacy search_controller moved to engine.legacy. Use engine.orchestrator.run_automl() instead."
+        )
+
+
+from engine.evaluator import accuracy_metric, confusion_matrix_for_model, f1_macro_metric
 from engine.predictor import BestModelPredictor
 from utils.datasets import load_csv_classification, load_text_csv_classification
-from utils.seed_utils import set_seed, get_seed_from_env
+from utils.seed_utils import get_seed_from_env, set_seed
 
 
 def get_metric_function(metric_name: str) -> Callable:
@@ -30,7 +35,7 @@ def get_metric_function(metric_name: str) -> Callable:
     return metric_map[metric_name]
 
 
-def create_base_config(metric_fn: Callable, metric_name: str) -> Dict:
+def create_base_config(metric_fn: Callable, metric_name: str) -> dict:
     """Create base configuration dictionary."""
     return {
         "lr": 1e-3,
@@ -47,7 +52,7 @@ def split_and_create_loaders(
     train_ratio: float = 0.8,
     train_batch_size: int = 32,
     val_batch_size: int = 64,
-) -> Tuple[DataLoader, DataLoader]:
+) -> tuple[DataLoader, DataLoader]:
     """Split dataset and create data loaders."""
     n_train = int(train_ratio * len(dataset))
     n_val = len(dataset) - n_train
@@ -57,17 +62,22 @@ def split_and_create_loaders(
     return train_loader, val_loader
 
 
-def compute_meta_features_safe(dataset: TensorDataset, in_dim: int, out_dim: int, n_samples: int) -> Optional[Dict]:
+def compute_meta_features_safe(
+    dataset: TensorDataset, in_dim: int, out_dim: int, n_samples: int
+) -> dict | None:
     """Safely compute meta-features with error handling."""
     try:
         from examples.meta_features import compute_meta_features_from_dataset
+
         return compute_meta_features_from_dataset(dataset, in_dim, out_dim, n_samples)
     except Exception as e:
         print(f"[WARN] Could not compute meta-features: {e}")
         return None
 
 
-def print_confusion_matrix_results(predictor: BestModelPredictor, val_loader: DataLoader, device: str, out_dim: int):
+def print_confusion_matrix_results(
+    predictor: BestModelPredictor, val_loader: DataLoader, device: str, out_dim: int
+):
     """Print confusion matrix and metrics."""
     print("\n" + "=" * 60)
     print("Confusion Matrix on Validation Set")
@@ -76,11 +86,11 @@ def print_confusion_matrix_results(predictor: BestModelPredictor, val_loader: Da
     print("\nConfusion Matrix:")
     print(cm)
     print("\n(rows = true labels, columns = predicted labels)")
-    
+
     # For binary classification, show some interpretability
     if out_dim == 2:
         tn, fp, fn, tp = cm.ravel()
-        print(f"\nBinary Classification Metrics:")
+        print("\nBinary Classification Metrics:")
         print(f"  True Negatives:  {tn}")
         print(f"  False Positives: {fp}")
         print(f"  False Negatives: {fn}")
@@ -90,10 +100,10 @@ def print_confusion_matrix_results(predictor: BestModelPredictor, val_loader: Da
                 print(f"  {k}: {v:.4f}")
 
 
-def load_dataset_by_name(dataset: str) -> Tuple[TensorDataset, int, int, str]:
+def load_dataset_by_name(dataset: str) -> tuple[TensorDataset, int, int, str]:
     """
     Load dataset by name.
-    
+
     Returns:
         (dataset_obj, in_dim, out_dim, dataset_name)
     """
@@ -107,7 +117,7 @@ def load_dataset_by_name(dataset: str) -> Tuple[TensorDataset, int, int, str]:
                 "petal length (cm)",
                 "petal width (cm)",
             ],
-            "error_msg": "➡ Run: python utils/prepare_datasets.py first",
+            "error_msg": "➡ Run: python examples/prepare_datasets.py first",
         },
         "titanic": {
             "path": "data/titanic_clean.csv",
@@ -123,69 +133,71 @@ def load_dataset_by_name(dataset: str) -> Tuple[TensorDataset, int, int, str]:
                 "Embarked_Q",
                 "Embarked_S",
             ],
-            "error_msg": "➡ Run: python utils/prepare_titanic.py (after placing Kaggle train.csv in data/)",
+            "error_msg": "➡ Run: python examples/prepare_titanic.py (after placing Kaggle train.csv in data/)",
         },
     }
-    
+
     if dataset not in dataset_configs:
         raise ValueError(f"Unknown dataset: {dataset}. Available: {list(dataset_configs.keys())}")
-    
+
     config = dataset_configs[dataset]
     path = config["path"]
-    
+
     if not Path(path).exists():
         print(f"[ERROR] {path} not found.")
         print(config["error_msg"])
         raise FileNotFoundError(f"Dataset file not found: {path}")
-    
+
     dataset_obj, in_dim, out_dim = load_csv_classification(
         path=path,
         label_col=config["label_col"],
         feature_cols=config["feature_cols"],
     )
-    
-    print(f"[INFO] Loaded {dataset.upper()} dataset: {len(dataset_obj)} samples, {in_dim} features, {out_dim} classes")
-    
+
+    print(
+        f"[INFO] Loaded {dataset.upper()} dataset: {len(dataset_obj)} samples, {in_dim} features, {out_dim} classes"
+    )
+
     return dataset_obj, in_dim, out_dim, dataset
 
 
 def run_experiment(dataset: str, metric_name: str):
     """
     Run a complete AutoML experiment.
-    
+
     Args:
         dataset: "iris" or "titanic"
         metric_name: "accuracy" or "f1"
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    print(f"\n{'='*60}")
+
+    print(f"\n{'=' * 60}")
     print(f"Running Experiment: {dataset.upper()} with {metric_name.upper()} metric")
-    print(f"{'='*60}\n")
-    
+    print(f"{'=' * 60}\n")
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     # 1) Select metric function
     metric_fn = get_metric_function(metric_name)
-    
+
     # 2) Load dataset
     try:
         dataset_obj, in_dim, out_dim, dataset_name = load_dataset_by_name(dataset)
     except FileNotFoundError:
         return
-    
+
     # 3) Train/val split
     train_loader, val_loader = split_and_create_loaders(dataset_obj)
-    
+
     # 4) Base config
     base_config = create_base_config(metric_fn, metric_name)
-    
+
     print(f"[INFO] Using metric: {metric_name.upper()}")
     print()
-    
+
     # Compute meta-features
     meta_features = compute_meta_features_safe(dataset_obj, in_dim, out_dim, len(dataset_obj))
-    
+
     # 5) Run model search
     best_model_info = run_model_search(
         train_loader=train_loader,
@@ -198,10 +210,10 @@ def run_experiment(dataset: str, metric_name: str):
         dataset_name=dataset_name,
         meta_features=meta_features,
     )
-    
+
     print("\n[INFO] Best model from search:")
     print(best_model_info)
-    
+
     # 6) Load best model via predictor
     predictor = BestModelPredictor(
         results_csv="experiments/results.csv",
@@ -209,22 +221,22 @@ def run_experiment(dataset: str, metric_name: str):
         out_dim=out_dim,
         device=device,
     )
-    
+
     print(f"\n[INFO] Loaded best model: {predictor.model_name}")
     print(f"[INFO] Best recorded metric: {predictor.best_metric:.4f}")
-    
+
     # 7) Sample predictions
     val_batch = next(iter(DataLoader(val_loader.dataset, batch_size=5)))
     x_val_small, y_val_small = val_batch
-    
+
     preds = predictor.predict_classes(x_val_small)
     print("\nSample predictions:")
     print("True labels:   ", y_val_small.tolist())
     print("Predicted:     ", preds.tolist())
-    
+
     # 8) Confusion matrix
     print_confusion_matrix_results(predictor, val_loader, device, out_dim)
-    
+
     # 9) Next steps
     print("\n" + "=" * 60)
     print("Next Steps")
@@ -241,7 +253,9 @@ def run_custom_csv_experiment():
     print("Custom CSV AutoML Mode")
     print("============================================================\n")
 
-    dataset_name = input("Enter a name for this dataset (for logging): ").strip() or "custom_dataset"
+    dataset_name = (
+        input("Enter a name for this dataset (for logging): ").strip() or "custom_dataset"
+    )
     csv_name = input("Enter CSV file name in data/ (e.g. my_data.csv): ").strip()
     csv_path = os.path.join("data", csv_name)
 
@@ -261,7 +275,7 @@ def run_custom_csv_experiment():
     if metric_choice not in metric_map:
         print("[ERROR] Invalid metric choice.")
         return
-    
+
     metric_name = metric_map[metric_choice]
     metric_fn = get_metric_function(metric_name)
 
@@ -271,7 +285,7 @@ def run_custom_csv_experiment():
     try:
         dataset, in_dim, out_dim = load_csv_classification(
             path=csv_path,
-            feature_cols=None,   # auto-detect numeric features
+            feature_cols=None,  # auto-detect numeric features
             label_col=label_col,
         )
         mode = "numeric"
@@ -393,7 +407,9 @@ def run_custom_csv_threshold_experiment():
     print("Custom CSV Threshold Search Mode")
     print("============================================================\n")
 
-    dataset_name = input("Enter a name for this dataset (for logging): ").strip() or "custom_dataset"
+    dataset_name = (
+        input("Enter a name for this dataset (for logging): ").strip() or "custom_dataset"
+    )
     csv_name = input("Enter CSV file name in data/: ").strip()
     csv_path = os.path.join("data", csv_name)
 
@@ -412,7 +428,7 @@ def run_custom_csv_threshold_experiment():
     if metric_choice not in metric_map:
         print("[ERROR] Invalid metric choice.")
         return
-    
+
     metric_name = metric_map[metric_choice]
     metric_fn = get_metric_function(metric_name)
 
@@ -430,7 +446,7 @@ def run_custom_csv_threshold_experiment():
     try:
         dataset, in_dim, out_dim = load_csv_classification(
             path=csv_path,
-            feature_cols=None,   # auto-detect numeric features
+            feature_cols=None,  # auto-detect numeric features
             label_col=label_col,
         )
         mode = "numeric"
@@ -478,7 +494,7 @@ def run_custom_csv_threshold_experiment():
 
     # === Compute meta-features for proxy ===
     from examples.meta_features import compute_meta_features_from_csv
-    
+
     try:
         if mode == "numeric":
             meta_features = compute_meta_features_from_csv(csv_path, label_col)
@@ -510,7 +526,10 @@ def run_custom_csv_threshold_experiment():
         base_config=base_config,
         results_csv=results_csv,
         target_metric=target_metric,
-        family_order=["classical_supervised", "neural_supervised"],  # Try classical first, then neural
+        family_order=[
+            "classical_supervised",
+            "neural_supervised",
+        ],  # Try classical first, then neural
         dataset_name=dataset_name,
         meta_features=meta_features,
         use_proxy=True,
@@ -527,11 +546,11 @@ def run_custom_csv_threshold_experiment():
     print(f"Best metric: {best_info['metric']:.4f} ({metric_name})")
     print(f"Target metric: {target_metric:.4f}")
     print(f"Reached target: {'✓ YES' if reached else '✗ NO'}")
-    
+
     # Show proxy gaps if available
-    if result.get('proxy_gaps'):
+    if result.get("proxy_gaps"):
         print("\nProxy Performance:")
-        for model, pred, actual, gap in result['proxy_gaps']:
+        for model, pred, actual, gap in result["proxy_gaps"]:
             print(f"  {model}: predicted={pred:.4f}, actual={actual:.4f}, gap={gap:.4f}")
 
     # Load best model and show confusion matrix
@@ -568,26 +587,29 @@ def run_custom_csv_threshold_experiment():
     print()
 
 
-def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = None, metric_name: Optional[str] = None):
+def run_dataset_agnostic_experiment(
+    csv_path: str, label_col: str | None = None, metric_name: str | None = None
+):
     """
     Run experiment using the new dataset-agnostic system.
     Supports both classification and regression automatically.
     """
-    from utils.datasets import load_tabular_dataset
-    from engine.evaluator import METRIC_REGISTRY
-    from models.model_zoo import MODEL_REGISTRY, build_model
-    from engine.trainer import train_one_model
-    from torch.utils.data import DataLoader, TensorDataset
     import numpy as np
     import yaml
-    
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from engine.evaluator import METRIC_REGISTRY
+    from engine.trainer import train_one_model
+    from models.model_zoo import MODEL_REGISTRY, build_model
+    from utils.datasets import load_tabular_dataset
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    print(f"\n{'='*60}")
+
+    print(f"\n{'=' * 60}")
     print("🔥 Dataset-Agnostic AutoML Engine")
     print("=" * 60)
     print(f"Loading dataset: {csv_path}\n")
-    
+
     # Load dataset with unified loader
     try:
         dataset_info = load_tabular_dataset(
@@ -597,15 +619,16 @@ def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = No
     except Exception as e:
         print(f"[ERROR] Failed to load dataset: {e}")
         import traceback
+
         traceback.print_exc()
         return
-    
+
     task_type = dataset_info["task_type"]
     X_df = dataset_info["X_df"]
     y = dataset_info["y"]
     meta = dataset_info["meta"]
     dataset_name = dataset_info["dataset_name"]
-    
+
     # Print insights
     print("\n" + "=" * 60)
     print("Dataset Insights")
@@ -618,10 +641,10 @@ def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = No
     print(f"Categorical features: {meta['n_categorical']}")
     if task_type != "regression":
         print(f"Number of classes: {meta['n_classes']}")
-        if meta.get('class_imbalance'):
+        if meta.get("class_imbalance"):
             print(f"Class imbalance: {meta['class_imbalance']:.3f}")
     print("=" * 60 + "\n")
-    
+
     # Select metric if not provided
     if metric_name is None:
         if task_type == "regression":
@@ -639,13 +662,13 @@ def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = No
             choice = input("Enter choice [1-2]: ").strip()
             metric_map = {"1": "accuracy", "2": "f1_macro"}
             metric_name = metric_map.get(choice, "accuracy")
-    
+
     # Get metric function
     if metric_name not in METRIC_REGISTRY:
         print(f"[WARN] Unknown metric {metric_name}, using default")
         metric_name = "r2" if task_type == "regression" else "accuracy"
     metric_fn = METRIC_REGISTRY[metric_name]
-    
+
     # Filter models by task type
     available_models = []
     for model_name, model_info in MODEL_REGISTRY.items():
@@ -654,55 +677,58 @@ def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = No
             if "regression" in family:
                 available_models.append(model_name)
         else:
-            if "supervised" in family or "classification" in family or family == "classical_supervised":
+            if (
+                "supervised" in family
+                or "classification" in family
+                or family == "classical_supervised"
+            ):
                 available_models.append(model_name)
-    
+
     if not available_models:
         print(f"[ERROR] No models available for task type: {task_type}")
         return
-    
+
     print(f"[INFO] Selected {len(available_models)} models for {task_type}: {available_models}\n")
-    
+
     # Convert to tensors (use numeric features only for now)
-    numeric_cols = [c for c in X_df.columns if meta['column_types'].get(c) == "numeric"]
+    numeric_cols = [c for c in X_df.columns if meta["column_types"].get(c) == "numeric"]
     if len(numeric_cols) > 0:
         X_numeric = X_df[numeric_cols].values.astype(np.float32)
     else:
         X_numeric = X_df.values.astype(np.float32)
-    
+
     X_tensor = torch.from_numpy(X_numeric)
     if task_type == "regression":
         y_tensor = torch.from_numpy(y.astype(np.float32))
     else:
         y_tensor = torch.from_numpy(y.astype(np.int64))
-    
+
     # Create train/val split
     n_samples = len(X_tensor)
     n_train = int(0.8 * n_samples)
-    n_val = n_samples - n_train
     indices = torch.randperm(n_samples)
     train_indices = indices[:n_train]
     val_indices = indices[n_train:]
-    
+
     X_train = X_tensor[train_indices]
     y_train = y_tensor[train_indices]
     X_val = X_tensor[val_indices]
     y_val = y_tensor[val_indices]
-    
+
     # Create data loaders
     train_dataset = TensorDataset(X_train, y_train)
     val_dataset = TensorDataset(X_val, y_val)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=64)
-    
+
     # Base config
     if task_type == "regression":
         loss_fn = torch.nn.MSELoss()
         out_dim = 1
     else:
         loss_fn = torch.nn.CrossEntropyLoss()
-        out_dim = meta['n_classes']
-    
+        out_dim = meta["n_classes"]
+
     base_config = {
         "lr": 1e-3,
         "epochs": 20,
@@ -712,39 +738,40 @@ def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = No
         "patience": 5,
         "task_type": task_type,
     }
-    
+
     in_dim = X_tensor.shape[1]
-    
+
     # Load per-model configs
     models_config_path = Path("configs/models.yaml")
     model_cfgs = {}
     if models_config_path.exists():
         with open(models_config_path) as f:
             model_cfgs = yaml.safe_load(f) or {}
-    
+
     # Search over models
     best_metric = float("-inf")
     best_model_info = None
     results_csv = "experiments/results.csv"
-    
+
     # Initialize results file
     from utils.logging_utils import init_results_file
+
     init_results_file(results_csv, include_meta_features=True)
-    
+
     print(f"[INFO] Training {len(available_models)} models...\n")
-    
+
     for model_name in available_models:
         print(f"\n=== Training: {model_name} ===")
-        
+
         try:
             # Build model
             model = build_model(model_name, in_dim, out_dim)
-            
+
             # Merge config
             config = base_config.copy()
             if model_name in model_cfgs:
                 config.update(model_cfgs[model_name])
-            
+
             # Train
             metric, best_state = train_one_model(
                 model=model,
@@ -753,11 +780,12 @@ def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = No
                 device=device,
                 config=config,
             )
-            
+
             print(f"[INFO] {model_name} achieved {metric_name}={metric:.4f}")
-            
+
             # Log result
             from utils.logging_utils import log_result
+
             log_result(
                 results_csv,
                 model_name,
@@ -765,15 +793,15 @@ def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = No
                 f"saved_models/{model_name}_best.pth",
                 dataset_name=dataset_name,
                 meta_features={
-                    "n_samples": meta['n_samples'],
-                    "n_features": meta['n_features'],
-                    "n_classes": meta.get('n_classes'),
-                    "class_imbalance": meta.get('class_imbalance'),
+                    "n_samples": meta["n_samples"],
+                    "n_features": meta["n_features"],
+                    "n_classes": meta.get("n_classes"),
+                    "class_imbalance": meta.get("class_imbalance"),
                 },
                 model_family=MODEL_REGISTRY[model_name].get("family", ""),
                 metric_name=metric_name,
             )
-            
+
             if metric > best_metric:
                 best_metric = metric
                 best_model_info = {
@@ -781,13 +809,14 @@ def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = No
                     "metric": metric,
                     "metric_name": metric_name,
                 }
-        
+
         except Exception as e:
             print(f"[ERROR] Failed to train {model_name}: {e}")
             import traceback
+
             traceback.print_exc()
             continue
-    
+
     if best_model_info:
         print("\n" + "=" * 60)
         print("🏆 Best Model")
@@ -795,7 +824,7 @@ def run_dataset_agnostic_experiment(csv_path: str, label_col: Optional[str] = No
         print(f"Model: {best_model_info['model_name']}")
         print(f"Metric ({best_model_info['metric_name']}): {best_model_info['metric']:.4f}")
         if task_type == "regression":
-            if "neg" in best_model_info['metric_name']:
+            if "neg" in best_model_info["metric_name"]:
                 print(f"  (Actual value: {abs(best_model_info['metric']):.4f})")
         print("=" * 60 + "\n")
     else:
@@ -827,9 +856,9 @@ def main_cli():
     set_seed(seed)
     if seed != 42:  # Only print if non-default
         print(f"[INFO] Using random seed: {seed}")
-    
+
     print_banner()
-    
+
     print("Select an option:")
     print("  [1] Iris demo (Accuracy)")
     print("  [2] Iris demo (F1)")
@@ -840,9 +869,9 @@ def main_cli():
     print("  [7] Stress test suite")
     print("  [8] Dataset-agnostic mode (NEW - with preprocessing)")
     print("  [9] Exit")
-    
+
     choice = input("\nEnter choice [1-8]: ").strip()
-    
+
     if choice == "1":
         dataset = "iris"
         metric = "accuracy"
@@ -863,6 +892,7 @@ def main_cli():
         return
     elif choice == "7":
         from examples.stress_test import run_all_stress_tests
+
         run_all_stress_tests()
         return
     elif choice == "8":
@@ -873,26 +903,26 @@ def main_cli():
         print("  [1] Basic mode (quick search)")
         print("  [2] Intelligent mode (with meta-learning proxy)")
         mode_choice = input("Enter choice [1-2] (default: 2): ").strip() or "2"
-        
+
         csv_name = input("Enter CSV file name in data/ (e.g. paddydataset.csv): ").strip()
         csv_path = os.path.join("data", csv_name)
-        
+
         if not os.path.exists(csv_path):
             print(f"[ERROR] File not found: {csv_path}")
             return
-        
+
         label_col_input = input("Enter label column name (or press Enter to auto-detect): ").strip()
         label_col = label_col_input if label_col_input else None
-        
+
         if mode_choice == "2":
             # Use intelligent orchestrator with new config system
-            from engine.orchestrator import run_automl
+
             from engine.config import AutoMLConfig
-            import torch
-            
+            from engine.orchestrator import run_automl
+
             target_input = input("Enter target metric (or press Enter to try all models): ").strip()
             target_metric = float(target_input) if target_input else None
-            
+
             # Create config
             config = AutoMLConfig(
                 csv_path=csv_path,
@@ -902,9 +932,9 @@ def main_cli():
                 use_meta_learning=True,
                 use_proxy_ranking=True,
                 max_candidates=20,
-                device="auto",
+                device="cpu",
             )
-            
+
             run_automl(config)
         else:
             # Use basic mode
@@ -916,7 +946,7 @@ def main_cli():
     else:
         print("\n❌ Invalid choice. Please run again.\n")
         return
-    
+
     print(f"\n[INFO] You selected: dataset={dataset}, metric={metric}")
     print("This run will:")
     print("  - Load the dataset")
@@ -925,33 +955,70 @@ def main_cli():
     print("  - Select the best model")
     print("  - Print confusion matrix and metrics")
     print()
-    
+
     run_experiment(dataset, metric)
 
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="AutoML Thinking Machine")
     parser.add_argument("--autopilot", type=str, help="Path to CSV file (autopilot mode)")
     parser.add_argument("--label", type=str, default=None, help="Label column name")
-    parser.add_argument("--metric", type=str, default=None, help="Metric to optimize (accuracy, f1_macro, r2, etc.)")
-    parser.add_argument("--target", type=float, default=None, help="Target metric value (stop when reached)")
-    parser.add_argument("--max-candidates", type=int, default=20, help="Maximum number of candidates to try")
-    parser.add_argument("--mode", type=str, default="intelligent", choices=["basic", "intelligent"], help="Search mode")
-    
+    parser.add_argument(
+        "--metric", type=str, default=None, help="Metric to optimize (accuracy, f1_macro, r2, etc.)"
+    )
+    parser.add_argument(
+        "--target", type=float, default=None, help="Target metric value (stop when reached)"
+    )
+    parser.add_argument(
+        "--max-candidates", type=int, default=20, help="Maximum number of candidates to try"
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="intelligent",
+        choices=["basic", "intelligent"],
+        help="Search mode",
+    )
+    parser.add_argument("--test-ratio", type=float, default=0.2, help="Untouched test fraction")
+    parser.add_argument("--cv-folds", type=int, default=5, help="Inner cross-validation folds")
+    parser.add_argument("--cv-repeats", type=int, default=1, help="Inner CV repeats")
+    parser.add_argument("--seed", type=int, default=42, help="Deterministic split/model seed")
+    parser.add_argument(
+        "--ordering",
+        choices=["registry", "random", "proxy", "meta", "proxy_meta"],
+        default=None,
+        help="Candidate ordering method",
+    )
+    parser.add_argument(
+        "--use-proxy",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable preprocessing proxy scoring",
+    )
+    parser.add_argument(
+        "--use-meta-learning",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable learned candidate ranking",
+    )
+    parser.add_argument("--exhaustive", action="store_true", help="Evaluate the full universe")
+    parser.add_argument("--n-jobs", type=int, default=1, help="Parallel candidate workers")
+
     args, unknown = parser.parse_known_args()
-    
+
     if args.autopilot:
         # Autopilot mode: run AutoML directly from command line
+        import torch
+
         from engine.config import AutoMLConfig
         from engine.orchestrator import run_automl
-        import torch
-        
+
         print("\n" + "=" * 60)
         print("🤖 AutoML Autopilot Mode")
         print("=" * 60)
-        
+
         config = AutoMLConfig(
             csv_path=args.autopilot,
             label_col=args.label,
@@ -959,11 +1026,18 @@ if __name__ == "__main__":
             target_metric=args.target,
             mode=args.mode,
             max_candidates=args.max_candidates,
-            use_meta_learning=True,
-            use_proxy_ranking=True,
-            device="auto",
+            use_meta_learning=args.use_meta_learning,
+            use_proxy_ranking=args.use_proxy,
+            ordering_mode=args.ordering,
+            exhaustive=args.exhaustive,
+            test_ratio=args.test_ratio,
+            cv_folds=args.cv_folds,
+            cv_repeats=args.cv_repeats,
+            random_state=args.seed,
+            n_jobs=args.n_jobs,
+            device="cpu",
         )
-        
+
         run_automl(config)
     else:
         # Interactive mode

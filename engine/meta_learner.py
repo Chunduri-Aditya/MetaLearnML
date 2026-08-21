@@ -1,341 +1,316 @@
-"""
-Meta-learning brain for the AutoML engine.
-Learns from past experiments to predict model performance.
-"""
+"""Schema-checked meta-learner for candidate performance prediction."""
 
-import pandas as pd
-import numpy as np
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple
+from typing import Any
+
 import joblib
+import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 
+from engine.candidates import CandidateSpec
+from engine.meta_features import (
+    META_FEATURE_SCHEMA_VERSION,
+    PREPROCESSING_VOCABULARIES,
+    FeatureSchema,
+    build_feature_schema,
+    encode_meta_features,
+)
+from engine.meta_history import (
+    MetaHistoryValidationError,
+    validate_history_dataframe,
+)
+from engine.meta_history import (
+    load_history as load_validated_history,
+)
+
+
+class IncompatibleMetaModelError(RuntimeError):
+    """Raised when a persisted meta-model does not match the live feature contract."""
+
 
 class MetaLearner:
-    """
-    Meta-model that learns to predict model performance based on dataset characteristics.
-    This is the "brain" of the AutoML engine.
-    
-    Version 2: Supports per-task+metric models for better specialization.
-    """
-    
+    """Predict candidate objective values from prior, validated experiments."""
+
     def __init__(
-        self, 
+        self,
         meta_data_path: str = "experiments/meta_train.csv",
-        task_type: Optional[str] = None,
-        metric_name: Optional[str] = None,
+        task_type: str | None = None,
+        metric_name: str | None = None,
     ):
         self.meta_data_path = Path(meta_data_path)
         self.task_type = task_type
         self.metric_name = metric_name
-        self.model = None
+        self.model: RandomForestRegressor | None = None
         self.scaler = StandardScaler()
         self.is_trained = False
-        self.feature_names = []
-        self.min_history_size = 20  # Minimum experiments needed for reliable meta-learning
-    
+        self.schema: FeatureSchema = build_feature_schema()
+        self.feature_names = list(self.schema.feature_names)
+        self.min_history_size = 20
+        self.last_history_summary: dict[str, Any] = {}
+
     def load_history(self) -> pd.DataFrame:
-        """Load historical experiment data."""
-        if not self.meta_data_path.exists():
-            return pd.DataFrame()
-        
-        try:
-            df = pd.read_csv(self.meta_data_path)
-            return df
-        except Exception as e:
-            print(f"[WARN] Could not load meta-learning history: {e}")
-            return pd.DataFrame()
-    
+        summary = load_validated_history(self.meta_data_path)
+        self.last_history_summary = {
+            "accepted_rows": summary.accepted_rows,
+            "rejected_rows": summary.rejected_rows,
+            "rejection_reasons": summary.rejection_reasons,
+            "duplicate_rows": summary.duplicate_rows,
+        }
+        if summary.rejected_rows or summary.duplicate_rows:
+            print(f"[WARN] Meta-history validation summary: {self.last_history_summary}")
+        return summary.dataframe
+
     def _get_model_path(self) -> Path:
-        """Get model path based on task_type and metric_name."""
         base = Path("experiments")
         if self.task_type and self.metric_name:
             return base / f"meta_model_{self.task_type}_{self.metric_name}.pkl"
-        else:
-            return base / "meta_model.pkl"  # Legacy fallback
-    
-    def extract_features(self, dataset_meta: Dict, model_name: str, preprocessing_name: str) -> np.ndarray:
-        """
-        Extract features for meta-model prediction.
-        
-        Args:
-            dataset_meta: Dataset metadata
-            model_name: Model name
-            preprocessing_name: Preprocessing strategy name
-        
-        Returns:
-            Feature vector
-        """
-        features = []
-        feature_names = []
-        
-        # Dataset features (raw)
-        n_samples = dataset_meta.get("n_samples", 0)
-        n_features = dataset_meta.get("n_features", 0)
-        n_numeric = dataset_meta.get("n_numeric", 0)
-        n_categorical = dataset_meta.get("n_categorical", 0)
-        n_text = dataset_meta.get("n_text", 0)
-        n_classes = dataset_meta.get("n_classes", 0) or 0
-        class_imbalance = dataset_meta.get("class_imbalance", 0) or 0
-        missing_frac = dataset_meta.get("missing_value_fraction", 0)
-        
-        # Raw features
-        features.extend([n_samples, n_features, n_numeric, n_categorical, n_classes, class_imbalance, missing_frac])
-        feature_names.extend(["n_samples", "n_features", "n_numeric", "n_categorical", "n_classes", "class_imbalance", "missing_value_fraction"])
-        
-        # Derived features (richer representation)
-        features.append(np.log10(n_samples + 1))
-        feature_names.append("log_n_samples")
-        
-        features.append(np.log10(n_features + 1))
-        feature_names.append("log_n_features")
-        
-        # Feature density (for sparse datasets like TF-IDF)
-        if n_samples > 0 and n_features > 0:
-            features.append(n_features / n_samples)
-            feature_names.append("feature_density")
-        else:
-            features.append(0.0)
-            feature_names.append("feature_density")
-        
-        # Text fraction
-        if n_features > 0:
-            features.append(n_text / n_features)
-            feature_names.append("text_fraction")
-        else:
-            features.append(0.0)
-            feature_names.append("text_fraction")
-        
-        # Categorical fraction
-        if n_features > 0:
-            features.append(n_categorical / n_features)
-            feature_names.append("categorical_fraction")
-        else:
-            features.append(0.0)
-            feature_names.append("categorical_fraction")
-        
-        # Model family encoding (one-hot like)
-        model_families = ["neural_supervised", "classical_supervised", "linear_regression", 
-                         "tree_regression", "neural_regression"]
-        model_family = self._get_model_family(model_name)
-        for fam in model_families:
-            features.append(1.0 if fam == model_family else 0.0)
-            feature_names.append(f"model_family_{fam}")
-        
-        # Preprocessing encoding
-        preprocessing_types = ["basic_numeric_only", "numeric_plus_cat_onehot", 
-                             "robust_numeric", "text_tfidf_basic"]
-        for prep in preprocessing_types:
-            features.append(1.0 if prep == preprocessing_name else 0.0)
-            feature_names.append(f"preprocessing_{prep}")
-        
-        self.feature_names = feature_names
-        return np.array(features, dtype=np.float32)
-    
-    def _get_model_family(self, model_name: str) -> str:
-        """Get model family from model name."""
-        from models.model_zoo import MODEL_REGISTRY
-        return MODEL_REGISTRY.get(model_name, {}).get("family", "unknown")
-    
-    def train(self, history_df: Optional[pd.DataFrame] = None):
-        """
-        Train meta-model on historical data.
-        
-        Args:
-            history_df: Optional DataFrame with history. If None, loads from file.
-        """
+        return base / "meta_model.pkl"
+
+    def extract_features(
+        self,
+        dataset_meta: Mapping[str, Any],
+        model_name: str,
+        preprocessing: Any,
+        *,
+        model_family: str | None = None,
+    ) -> np.ndarray:
+        if isinstance(preprocessing, str):
+            raise TypeError(
+                "MetaLearner requires a PreprocessingStrategy or component mapping; "
+                "display-name parsing is supported only by the history migration command"
+            )
+        encoded = encode_meta_features(
+            dataset_meta,
+            model_name,
+            preprocessing,
+            model_family=model_family,
+            schema=self.schema,
+        )
+        self.feature_names = list(encoded.names)
+        return encoded.values
+
+    def train(self, history_df: pd.DataFrame | None = None) -> None:
         if history_df is None:
             history_df = self.load_history()
-        
-        # Filter by task_type and metric_name if specified
+        else:
+            summary = validate_history_dataframe(
+                history_df,
+                min_valid_rows=0,
+            )
+            history_df = summary.dataframe
+            self.last_history_summary = {
+                "accepted_rows": summary.accepted_rows,
+                "rejected_rows": summary.rejected_rows,
+                "rejection_reasons": summary.rejection_reasons,
+                "duplicate_rows": summary.duplicate_rows,
+            }
+
         if self.task_type:
-            history_df = history_df[history_df.get("task_type", "") == self.task_type]
+            history_df = history_df[history_df["task_type"] == self.task_type]
         if self.metric_name:
-            history_df = history_df[history_df.get("metric_name", "") == self.metric_name]
-        
+            history_df = history_df[history_df["metric_name"] == self.metric_name]
         if len(history_df) < self.min_history_size:
-            print(f"[INFO] Not enough history for meta-learning (need at least {self.min_history_size} experiments, got {len(history_df)})")
             self.is_trained = False
-            return
-        
-        # Prepare features and targets
-        X_list = []
-        y_list = []
-        
+            raise MetaHistoryValidationError(
+                "Not enough compatible validated history for meta-learning: "
+                f"need at least {self.min_history_size} rows after task/metric filtering, "
+                f"got {len(history_df)}"
+            )
+
+        features: list[np.ndarray] = []
+        targets: list[float] = []
         for _, row in history_df.iterrows():
-            try:
-                # Extract dataset metadata
-                dataset_meta = {
-                    "n_samples": row.get("n_samples", 0),
-                    "n_features": row.get("n_features", 0),
-                    "n_numeric": row.get("n_numeric", 0),
-                    "n_categorical": row.get("n_categorical", 0),
-                    "n_classes": row.get("n_classes", 0),
-                    "class_imbalance": row.get("class_imbalance", 0),
-                    "missing_value_fraction": 0,  # Would need to be logged
-                }
-                
-                model_name = row.get("model_name", "")
-                preprocessing_name = row.get("preprocessing_name", "basic_numeric_only")
-                metric_value = row.get("metric", row.get("metric_value", 0))
-                
-                features = self.extract_features(dataset_meta, model_name, preprocessing_name)
-                X_list.append(features)
-                y_list.append(metric_value)
-            except Exception as e:
-                continue
-        
-        if len(X_list) < 10:
-            print("[INFO] Not enough valid history for meta-learning")
-            self.is_trained = False
-            return
-        
-        X = np.array(X_list)
-        y = np.array(y_list)
-        
-        # Scale features
-        X_scaled = self.scaler.fit_transform(X)
-        
-        # Train model
+            dataset_meta = {
+                "n_samples": row["n_samples"],
+                "n_features": row["n_features"],
+                "n_numeric": row["n_numeric"],
+                "n_categorical": row["n_categorical"],
+                "n_text": row["n_text"],
+                "n_classes": row["n_classes"],
+                "class_imbalance": row["class_imbalance"],
+                "missing_value_fraction": row["missing_value_fraction"],
+            }
+            preprocessing = {
+                "numeric_scaler": row["numeric_scaler"],
+                "numeric_imputer": row["numeric_imputer"],
+                "categorical_encoder": row["categorical_encoder"],
+                "categorical_imputer": row["categorical_imputer"],
+            }
+            features.append(
+                self.extract_features(
+                    dataset_meta,
+                    str(row["model_identity"]),
+                    preprocessing,
+                    model_family=str(row["model_family"]),
+                )
+            )
+            targets.append(float(row["metric_objective_value"]))
+
+        matrix = np.asarray(features, dtype=np.float32)
+        target = np.asarray(targets, dtype=np.float64)
+        scaled = self.scaler.fit_transform(matrix)
         self.model = RandomForestRegressor(
             n_estimators=100,
             max_depth=10,
             random_state=42,
             n_jobs=-1,
         )
-        self.model.fit(X_scaled, y)
+        self.model.fit(scaled, target)
         self.is_trained = True
-        
-        print(f"[INFO] Meta-model trained on {len(X_list)} experiments")
-    
-    def predict(self, dataset_meta: Dict, model_name: str, preprocessing_name: str) -> float:
-        """
-        Predict model performance.
-        
-        Args:
-            dataset_meta: Dataset metadata
-            model_name: Model name
-            preprocessing_name: Preprocessing strategy name
-        
-        Returns:
-            Predicted metric value
-        """
+        print(f"[INFO] Meta-model trained on {len(matrix)} validated experiments")
+
+    def predict(
+        self,
+        dataset_meta: Mapping[str, Any],
+        model_name: str,
+        preprocessing: Any,
+        *,
+        model_family: str | None = None,
+    ) -> float:
+        if not self.is_trained or self.model is None:
+            return 0.0
+        features = self.extract_features(
+            dataset_meta,
+            model_name,
+            preprocessing,
+            model_family=model_family,
+        )
+        scaled = self.scaler.transform(features.reshape(1, -1))
+        return float(self.model.predict(scaled)[0])
+
+    def rank_specs(
+        self,
+        dataset_meta: Mapping[str, Any],
+        candidates: Sequence[CandidateSpec],
+    ) -> list[tuple[CandidateSpec, float]]:
         if not self.is_trained:
-            return 0.0  # Default prediction
-        
-        features = self.extract_features(dataset_meta, model_name, preprocessing_name)
-        features_scaled = self.scaler.transform(features.reshape(1, -1))
-        prediction = self.model.predict(features_scaled)[0]
-        return float(prediction)
-    
-    def rank_candidates(self, dataset_meta: Dict, candidates: List[Tuple[str, str]]) -> List[Tuple[str, str, float]]:
-        """
-        Rank candidates by predicted performance.
-        
-        Args:
-            dataset_meta: Dataset metadata
-            candidates: List of (model_name, preprocessing_name) tuples
-        
-        Returns:
-            List of (model_name, preprocessing_name, predicted_score) sorted by score
-        """
-        if not self.is_trained:
-            # Return in original order with default scores
-            return [(m, p, 0.0) for m, p in candidates]
-        
-        scored = []
-        for model_name, preprocessing_name in candidates:
-            score = self.predict(dataset_meta, model_name, preprocessing_name)
-            scored.append((model_name, preprocessing_name, score))
-        
-        # Sort by predicted score (descending)
-        scored.sort(key=lambda x: x[2], reverse=True)
-        return scored
-    
-    def save(self, path: Optional[str] = None):
-        """Save trained meta-model."""
-        if not self.is_trained:
-            return
-        
-        if path is None:
-            path = self._get_model_path()
-        else:
-            path = Path(path)
-        
-        path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump({
-            "model": self.model,
-            "scaler": self.scaler,
-            "feature_names": self.feature_names,
-            "task_type": self.task_type,
-            "metric_name": self.metric_name,
-        }, path)
-        print(f"[INFO] Meta-model saved to {path}")
-    
-    def load(self, path: Optional[str] = None):
-        """Load trained meta-model."""
-        if path is None:
-            path = self._get_model_path()
-        else:
-            path = Path(path)
-        
-        if path.exists():
-            data = joblib.load(path)
-            self.model = data["model"]
-            self.scaler = data["scaler"]
-            self.feature_names = data.get("feature_names", [])
-            self.task_type = data.get("task_type", self.task_type)
-            self.metric_name = data.get("metric_name", self.metric_name)
-            self.is_trained = True
-            print(f"[INFO] Meta-model loaded from {path}")
-        else:
-            self.is_trained = False
-    
-    def rank_candidates_with_fallback(
-        self, 
-        dataset_meta: Dict, 
-        candidates: List[Tuple[str, str]],
-        min_history_size: int = 20,
-    ) -> List[Tuple[str, str, float]]:
-        """
-        Rank candidates with fallback guardrails.
-        
-        If history is too small, ensures diversity in top candidates.
-        """
-        if not self.is_trained or len(self.load_history()) < min_history_size:
-            # Fallback: ensure diversity
-            print("[INFO] Meta-learner not confident. Using diversity-based ranking with fallback.")
-            return self._rank_with_diversity_fallback(dataset_meta, candidates)
-        
-        # Use meta-learning predictions
-        return self.rank_candidates(dataset_meta, candidates)
-    
-    def _rank_with_diversity_fallback(
-        self, 
-        dataset_meta: Dict, 
-        candidates: List[Tuple[str, str]]
-    ) -> List[Tuple[str, str, float]]:
-        """
-        Fallback ranking that ensures model family diversity.
-        """
-        from models.model_zoo import MODEL_REGISTRY
-        
-        # Group by model family
-        families_seen = set()
-        ranked = []
-        remaining = candidates.copy()
-        
-        # First pass: one from each family
-        for model_name, preprocessing_name in candidates:
-            family = MODEL_REGISTRY.get(model_name, {}).get("family", "unknown")
-            if family not in families_seen:
-                families_seen.add(family)
-                ranked.append((model_name, preprocessing_name, 0.0))
-                remaining.remove((model_name, preprocessing_name))
-        
-        # Second pass: add remaining
-        for model_name, preprocessing_name in remaining:
-            ranked.append((model_name, preprocessing_name, 0.0))
-        
+            return [(candidate, 0.0) for candidate in candidates]
+        ranked = [
+            (
+                candidate,
+                self.predict(
+                    dataset_meta,
+                    candidate.model_identity,
+                    candidate.preprocessing,
+                    model_family=candidate.model_family,
+                ),
+            )
+            for candidate in candidates
+        ]
+        ranked.sort(key=lambda item: (-item[1], item[0].candidate_id))
         return ranked
+
+    def rank_candidates(
+        self,
+        dataset_meta: Mapping[str, Any],
+        candidates: Sequence[tuple[str, Any]],
+    ) -> list[tuple[str, Any, float]]:
+        scored = [
+            (model, preprocessing, self.predict(dataset_meta, model, preprocessing))
+            for model, preprocessing in candidates
+        ]
+        scored.sort(key=lambda item: (-item[2], item[0], item[1].name))
+        return scored
+
+    def save(self, path: str | None = None) -> None:
+        if not self.is_trained or self.model is None:
+            return
+        artifact_path = Path(path) if path is not None else self._get_model_path()
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(
+            {
+                "artifact_type": "MetaLearnMLMetaModel",
+                "meta_feature_schema_version": META_FEATURE_SCHEMA_VERSION,
+                "feature_schema": self.schema.to_dict(),
+                "feature_names": list(self.schema.feature_names),
+                "registry_snapshot": [list(item) for item in self.schema.registry_snapshot],
+                "preprocessing_vocabularies": {
+                    name: list(values) for name, values in PREPROCESSING_VOCABULARIES.items()
+                },
+                "model": self.model,
+                "scaler": self.scaler,
+                "task_type": self.task_type,
+                "metric_name": self.metric_name,
+            },
+            artifact_path,
+        )
+        print(f"[INFO] Meta-model saved to {artifact_path}")
+
+    def load(self, path: str | None = None) -> None:
+        artifact_path = Path(path) if path is not None else self._get_model_path()
+        if not artifact_path.exists():
+            self.is_trained = False
+            return
+        data = joblib.load(artifact_path)
+        saved_schema = data.get("feature_schema", {})
+        version = data.get("meta_feature_schema_version")
+        incompatibilities = []
+        if version != META_FEATURE_SCHEMA_VERSION:
+            incompatibilities.append(f"schema version {version!r} != {META_FEATURE_SCHEMA_VERSION}")
+        if saved_schema.get("schema_hash") != self.schema.schema_hash:
+            incompatibilities.append("feature schema hash differs from the live registry/schema")
+        if tuple(data.get("feature_names", ())) != self.schema.feature_names:
+            incompatibilities.append("ordered feature names differ")
+        saved_vocabularies = data.get("preprocessing_vocabularies", {})
+        live_vocabularies = {
+            name: list(values) for name, values in PREPROCESSING_VOCABULARIES.items()
+        }
+        if saved_vocabularies != live_vocabularies:
+            incompatibilities.append("preprocessing vocabularies differ")
+        if self.task_type and data.get("task_type") != self.task_type:
+            incompatibilities.append(
+                f"task {data.get('task_type')!r} != requested {self.task_type!r}"
+            )
+        if self.metric_name and data.get("metric_name") != self.metric_name:
+            incompatibilities.append(
+                f"metric {data.get('metric_name')!r} != requested {self.metric_name!r}"
+            )
+        if incompatibilities:
+            self.is_trained = False
+            raise IncompatibleMetaModelError(
+                f"Cannot load meta-model {artifact_path}: "
+                + "; ".join(incompatibilities)
+                + ". Retrain it from validated schema-v2 history."
+            )
+        self.model = data["model"]
+        self.scaler = data["scaler"]
+        self.task_type = data.get("task_type", self.task_type)
+        self.metric_name = data.get("metric_name", self.metric_name)
+        self.feature_names = list(self.schema.feature_names)
+        self.is_trained = True
+        print(f"[INFO] Meta-model loaded from {artifact_path}")
+
+    def rank_candidates_with_fallback(
+        self,
+        dataset_meta: Mapping[str, Any],
+        candidates: Sequence[tuple[str, Any]],
+        min_history_size: int = 20,
+    ) -> list[tuple[str, Any, float]]:
+        try:
+            history_size = len(self.load_history())
+        except MetaHistoryValidationError:
+            history_size = 0
+        if not self.is_trained or history_size < min_history_size:
+            return self._rank_with_diversity_fallback(candidates)
+        return self.rank_candidates(dataset_meta, candidates)
+
+    @staticmethod
+    def _rank_with_diversity_fallback(
+        candidates: Sequence[tuple[str, Any]],
+    ) -> list[tuple[str, Any, float]]:
+        from models.model_zoo import MODEL_REGISTRY
+
+        families_seen: set[str] = set()
+        first: list[tuple[str, Any, float]] = []
+        remaining: list[tuple[str, Any, float]] = []
+        for model_name, preprocessing in candidates:
+            family = MODEL_REGISTRY.get(model_name, {}).get("family", "unknown")
+            target = first if family not in families_seen else remaining
+            target.append((model_name, preprocessing, 0.0))
+            families_seen.add(family)
+        return first + remaining

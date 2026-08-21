@@ -1,529 +1,243 @@
 # MetaLearnML
 
-**An intelligent, dataset-agnostic AutoML system that learns from experience using meta-learning to automatically select the best models and preprocessing strategies.**
+[![CI](https://github.com/Chunduri-Aditya/MetaLearnML/actions/workflows/ci.yml/badge.svg)](https://github.com/Chunduri-Aditya/MetaLearnML/actions/workflows/ci.yml)
 
-MetaLearnML is a complete, self-improving AutoML engine that automatically understands datasets, selects preprocessing strategies, chooses models, and learns from experience using meta-learning. Unlike traditional AutoML tools, MetaLearnML uses meta-learning to predict model performance based on past experiments, making it 10x faster than brute-force search while getting smarter with every experiment.
+MetaLearnML is a meta-learning AutoML engine for supervised tabular data. It extracts
+dataset and pipeline meta-features to rank preprocessing/model candidates, selects a
+pipeline with development-only cross-validation, and reports performance once on an
+untouched test partition.
 
-## 🎯 Overview
+The v2 implementation emphasizes reproducibility and testable evidence:
 
-This is a **dataset-agnostic thinking machine** that:
-- ✅ Automatically infers task type (regression vs classification)
-- ✅ Generates and ranks preprocessing strategies intelligently
-- ✅ Selects appropriate models based on task type
-- ✅ Uses meta-learning to predict performance and guide search
-- ✅ Learns from every experiment to improve over time
-- ✅ Generates comprehensive reports (Markdown, JSON, Text)
-- ✅ Supports parallel execution for faster training
-- ✅ Includes Neo4j graph database for experiment tracking
+- typed, content-addressed candidate records;
+- versioned meta-feature and experiment-history schemas;
+- exact model identity plus model-family features;
+- fold-local preprocessing and deterministic splits;
+- independent registry, random, proxy, meta, and proxy+meta ordering;
+- complete preprocessing/model bundles that accept raw DataFrames; and
+- a pinned, leave-one-dataset-out benchmark with committed result rows and plots.
 
-## 🚀 Quick Start
+## Evidence
 
-### Installation
+The published `balanced-15-v1` benchmark covers eight classification and seven
+regression OpenML tasks, three outer seeds, five inner folds, and 28–36 candidate
+pipelines. Exhaustive search is the reference only within that fixed candidate universe.
+
+| Published result | Value |
+|---|---:|
+| Proxy+meta median quality retention at budget 10 | 100.0% |
+| Proxy+meta median final-test normalized regret at budget 10 | 0.0 |
+| Median evaluation reduction vs. random to regret ≤ 0.05 | 0.0% |
+| Dataset-bootstrap 95% interval for that reduction | 0.0% to 50.0% |
+| Candidate-run failures retained in denominators | 18 |
+
+These values come directly from the committed [benchmark report](benchmarks/reports/benchmark.md)
+and [aggregate summary](benchmarks/results/aggregate_summary.json). The confidence
+interval does not establish a reliable reduction in evaluations, so this repository does
+not claim a measured search speedup. The evidence-generated résumé outcome is available
+in [resume_bullets.md](benchmarks/reports/resume_bullets.md).
+
+## Supported scope
+
+- Supervised tabular classification and regression
+- Numeric and categorical feature columns, including missing values
+- Binary and multiclass labels
+- scikit-learn estimators and PyTorch MLP candidates in the registry
+- Macro F1 by default for classification and R² by default for regression
+
+Free-text feature columns are unsupported in v2 and cause an actionable error. Time
+series, image, audio, multilabel, survival, and unsupervised tasks are outside the current
+scope. Unseen categorical values are handled by fitted bundle preprocessors.
+
+## Quick start
+
+Python 3.11 and CPU execution are the supported defaults.
 
 ```bash
-# Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/Chunduri-Aditya/MetaLearnML.git
 cd MetaLearnML
-
-# Recommended: isolated environment
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
-
-# Install runtime + dev dependencies
-pip install -r requirements-dev.txt
-
-# Optional convenience command
-make setup
+python -m pip install -r requirements-dev.txt
 ```
 
-### Basic Usage
+Run a CSV through the existing autopilot interface:
 
 ```bash
-# Interactive mode
-python main.py
-# Select [8] Dataset-agnostic mode
-# Select [2] Intelligent mode
-# Enter your CSV file path
-# Select metric (or press Enter for auto-detect)
-
-# Autopilot mode (non-interactive)
-python main.py --autopilot data/adult.csv --label income --metric accuracy
-python main.py --autopilot data/paddydataset.csv --metric r2
+python main.py --autopilot /path/to/table.csv --label target
 ```
 
-### Testing
+The defaults reserve 20% for untouched testing, select with five-fold CV, use seed 42,
+and enable proxy+meta ordering. Useful controls include:
 
 ```bash
-# Run default test suite
-pytest -q
-# or
-make test
-
-# Run Neo4j integration test only when explicitly enabled
-RUN_NEO4J_TESTS=1 pytest -q test_neo4j.py
+python main.py \
+  --autopilot /path/to/table.csv \
+  --label target \
+  --test-ratio 0.2 \
+  --cv-folds 5 \
+  --seed 42 \
+  --ordering random \
+  --no-use-proxy \
+  --no-use-meta-learning \
+  --max-candidates 10
 ```
 
-### Environment Variables
+Use `--exhaustive` to bypass candidate budgets and target-based stopping. The interactive
+workflow remains available through `python main.py`.
 
-Use `.env.example` as a template:
+## Evaluation contract
+
+1. Raw rows are split into development and untouched test partitions before metadata or
+   label encoders are fitted.
+2. Classification uses a stratified outer split and `StratifiedKFold`; regression uses
+   seeded random splitting and `KFold`.
+3. Each preprocessing strategy is fitted separately inside each training fold.
+4. PyTorch early stopping receives only a deterministic subset of that fold's training
+   rows. The CV validation fold is scored once afterward.
+5. After selection, the chosen pipeline is refitted on all development rows and evaluated
+   once on test rows.
+
+Reports keep `selection_cv_mean`, `selection_cv_std`, `test_score`, objective values, and
+the direction-adjusted generalization gap separate. RMSE and MAE are displayed in their
+natural positive form even though their internal objectives are maximized.
+
+## Candidate and history schemas
+
+A candidate is a structured model identity, preprocessing strategy, and training
+configuration. Its full ID is the SHA-256 of canonical JSON; twelve characters are used
+only as a display prefix. Human-readable preprocessing names are labels, not the source
+of truth.
+
+The meta-feature schema is deterministic and includes dataset metadata, exact model
+identity, model family, and four preprocessing component blocks. Every block includes
+explicit `none` and/or `unknown` values. A fitted meta-model stores the schema version,
+schema hash, ordered features, registry snapshot, scaler, estimator, task, and metric;
+incompatible artifacts fail safely.
+
+Mutable production history remains ignored at `experiments/meta_train.csv`. Its committed
+schema is [meta_train.schema.json](experiments/meta_train.schema.json). The non-overwriting
+legacy migration command is:
 
 ```bash
-cp .env.example .env
+python scripts/migrate_meta_history.py \
+  --input experiments/legacy_meta_train.csv \
+  --output experiments/meta_train_v2.csv
 ```
 
-## 📁 Project Structure
+Missing columns fail validation. Invalid rows are summarized by reason, and training
+fails if more than 5% are rejected or fewer than 20 valid rows remain.
 
-```
-MetaLearnML/
-├── main.py                          # CLI entry point
-├── engine/
-│   ├── orchestrator.py              # Main pipeline coordinator
-│   ├── intelligent_search.py       # Search engine
-│   ├── intelligent_search_parallel.py  # Parallel search
-│   ├── meta_learner.py             # Meta-learning brain
-│   ├── preprocessing_strategies.py # Preprocessing generation
-│   ├── trainer.py                  # Model training
-│   ├── evaluator.py                # Metrics computation
-│   ├── report_generator.py         # Report generation
-│   ├── config.py                   # AutoMLConfig
-│   └── legacy/                     # Legacy code (deprecated)
-├── models/
-│   ├── model_zoo.py                # Model registry
-│   ├── sk_models.py               # Sklearn wrappers
-│   └── mlp_variants.py            # PyTorch MLPs
-├── utils/
-│   ├── datasets.py                # Dataset loading & understanding
-│   ├── logging_utils.py           # Result logging
-│   └── seed_utils.py              # Random seed management
-├── configs/
-│   ├── models.yaml                 # Model hyperparameters
-│   └── preprocessing.yaml          # Preprocessing strategies
-├── examples/                       # Demo scripts
-├── experiments/                   # Results, meta-models, reports
-│   ├── results.csv                # All experiment results
-│   ├── meta_train.csv             # Meta-learning training data
-│   ├── meta_model_*.pkl          # Trained meta-models
-│   └── reports/                   # Generated reports
-├── data/                           # Datasets
-├── graph/                          # Neo4j graph client
-└── web/                            # FastAPI web app
-```
+## Loading a deployable bundle
 
-## 🧠 How It Works
-
-### Complete Pipeline
-
-```
-1. Dataset Understanding
-   └── Load CSV → Normalize columns → Infer task type → Analyze metadata
-
-2. Preprocessing Strategy Generation
-   └── Generate strategies → Rank by proxy evaluation → Select top-K
-
-3. Model Selection
-   └── Filter models by task type → Generate candidates
-
-4. Meta-Learning Ranking (Optional)
-   └── Predict performance → Rank candidates by predicted score
-
-5. Intelligent Search
-   └── Train models → Evaluate → Log results → Stop if target reached
-
-6. Meta-Learning Update
-   └── Add results to history → Retrain meta-model
-
-7. Report Generation
-   └── Generate Markdown/JSON/Text reports
-```
-
-### Key Components
-
-#### 1. Dataset Understanding (`utils/datasets.py`)
-
-- **`load_csv_with_fallback()`**: Robust CSV loading with column name normalization
-- **`infer_task_type()`**: Automatically detects regression vs classification
-- **`load_tabular_dataset()`**: Main loader that returns structured dataset info
-
-**Task Type Inference Logic**:
-- Float values → Regression
-- Integer values with >50 unique and >5% unique ratio → Regression
-- 2 unique values → Binary classification
-- Otherwise → Multiclass classification
-
-#### 2. Preprocessing Strategy Engine (`engine/preprocessing_strategies.py`)
-
-- **`generate_preprocessing_strategies()`**: Creates preprocessing combinations
-  - Numeric scalers: Standard, MinMax, Robust, PowerTransformer
-  - Categorical encoders: OneHot, Ordinal
-  - Numeric imputers: Mean, Median, KNN
-  - Categorical imputers: Most Frequent, Constant
-
-- **`rank_preprocessors_by_proxy()`**: Fast evaluation on small sample (512 rows)
-  - Trains cheap baseline models (LogisticRegression or RandomForest)
-  - Ranks strategies by proxy score
-  - Selects top-K strategies (typically top 3)
-
-#### 3. Model Zoo (`models/model_zoo.py`)
-
-**Model Registry** with task-aware filtering:
-- **Classification**: logreg, rf, gb, mlp_small, mlp_medium, mlp_deep, svm_clf
-- **Regression**: linreg, ridge, lasso, rf_reg, gb_reg, mlp_small_reg, mlp_medium_reg, mlp_deep_reg, svm_reg
-
-**Model Families**:
-- `neural_supervised`: PyTorch MLPs (classification)
-- `neural_regression`: PyTorch MLPs (regression)
-- `classical_supervised`: Sklearn models (classification)
-- `tree_regression`: Random Forest, Gradient Boosting (regression)
-- `linear_regression`: Linear, Ridge, Lasso
-
-#### 4. Meta-Learning Brain (`engine/meta_learner.py`)
-
-**How It Works**:
-1. **Training**: Learns from past experiments in `experiments/meta_train.csv`
-   - Extracts features: dataset meta + model + preprocessing
-   - Trains RandomForestRegressor to predict performance
-   - Saves per-task+metric models: `meta_model_{task}_{metric}.pkl`
-
-2. **Prediction**: Before training, predicts performance for each candidate
-   - Ranks candidates by predicted score
-   - Tries top candidates first (10x faster search!)
-
-3. **Self-Improvement**: After each run, retrains on expanded history
-
-**Features Extracted**:
-- Dataset: n_samples, n_features, n_numeric, n_categorical, n_classes, class_imbalance
-- Model: One-hot encoded family
-- Preprocessing: One-hot encoded strategy type
-
-#### 5. Intelligent Search (`engine/intelligent_search.py`)
-
-**Search Process**:
-1. Filter models by task type
-2. Generate preprocessing strategies
-3. Rank preprocessing by proxy (fast evaluation)
-4. Generate candidates (top preprocessing × all models)
-5. Rank candidates using meta-learning (if available)
-6. Train models in ranked order
-7. Stop early if target metric reached
-
-**Optimizations**:
-- **Proxy ranking**: 4x faster (tries top 3 preprocessing instead of all 12)
-- **Meta-learning**: 10x faster (tries top 10 candidates instead of all 24)
-- **Threshold stopping**: Stops when target is reached
-
-#### 6. Training Engine (`engine/trainer.py`)
-
-- **PyTorch models**: Full training loop with early stopping
-- **Sklearn models**: One-shot fit
-- **Task-aware loss**: MSE for regression, CrossEntropy for classification
-
-#### 7. Evaluation System (`engine/evaluator.py`)
-
-**Metrics Available**:
-- **Classification**: accuracy, f1_macro, f1_weighted, roc_auc
-- **Regression**: r2, neg_rmse, neg_mae (negative for "higher is better")
-
-#### 8. Report Generator (`engine/report_generator.py`)
-
-Generates comprehensive reports in three formats:
-- **Markdown**: For documentation, GitHub
-- **JSON**: For programmatic access
-- **Text**: For terminal viewing
-
-## 📖 Usage Guide
-
-### Dataset Requirements
-
-Your CSV should have:
-- **Numeric feature columns** (all values numeric)
-- **One label column** (integer classes or strings that will be auto-encoded)
-
-**Example CSV structure**:
-```csv
-feat1,feat2,feat3,target
-0.12,5.3,10,1
-0.42,2.1,3,0
-...
-```
-
-### Running Experiments
-
-#### Interactive Mode
-
-```bash
-python main.py
-# Select [8] Dataset-agnostic mode
-# Select [2] Intelligent mode (or [1] Basic mode)
-# Enter CSV path: data/your_dataset.csv
-# Enter label column (or press Enter for auto-detect)
-# Select metric: [1] R², [2] Accuracy, [3] F1, etc.
-# Enter target metric (or press Enter for no target)
-```
-
-#### Autopilot Mode
-
-```bash
-# Classification
-python main.py --autopilot data/adult.csv --label income --metric accuracy --target 0.86
-
-# Regression
-python main.py --autopilot data/paddydataset.csv --metric r2 --target 0.99
-```
-
-### Preparing Datasets
-
-#### Built-in Datasets
-
-```bash
-# Prepare common datasets (Iris, Wine, Breast Cancer)
-python examples/prepare_datasets.py
-```
-
-#### Custom CSV
-
-1. Place CSV in `data/` directory
-2. Ensure numeric features and one label column
-3. Run AutoML - it will auto-detect everything!
-
-#### Kaggle Datasets (e.g., Titanic)
-
-```bash
-# 1. Download train.csv from Kaggle
-# 2. Place in data/titanic_train.csv
-# 3. Preprocess
-python examples/prepare_titanic.py
-# 4. Run AutoML
-python main.py --autopilot data/titanic_clean.csv --label Survived --metric accuracy
-```
-
-### Configuration
-
-#### Model Hyperparameters (`configs/models.yaml`)
-
-```yaml
-mlp_small:
-  lr: 0.001
-  epochs: 10
-  patience: 5
-
-mlp_medium:
-  lr: 0.0005
-  epochs: 20
-  patience: 5
-```
-
-#### Preprocessing Strategies (`configs/preprocessing.yaml`)
-
-Preprocessing strategies are defined here and automatically selected based on dataset characteristics.
-
-### Using the Best Model
+Normal runs persist a directory containing the fitted preprocessor, fitted estimator or
+state, label encoder, expected columns/types, candidate configuration, metric metadata,
+and package/schema versions.
 
 ```python
+import pandas as pd
+
 from engine.predictor import BestModelPredictor
 
-# Load the best model from results
-predictor = BestModelPredictor(
-    results_csv="experiments/results.csv",
-    in_dim=20,  # Your input dimension
-    out_dim=3,  # Your number of classes
-)
-
-# Make predictions
-predictions = predictor.predict_classes(x_new_batch)
-probabilities = predictor.predict_proba(x_new_batch)
+predictor = BestModelPredictor(bundle_path="saved_models/my_dataset_best_pipeline")
+predictions = predictor.predict_dataframe(pd.DataFrame([{"age": 42, "segment": "new"}]))
 ```
 
-## 🔧 Advanced Features
+The old results-CSV predictor constructor remains as a deprecated compatibility adapter.
 
-### Parallel Execution
+## Reproducing the benchmark
 
-The system automatically uses parallel execution for sklearn models (safe, no GPU conflicts). PyTorch models remain sequential to avoid GPU conflicts.
-
-**Configuration**:
-```python
-from engine.config import AutoMLConfig
-
-config = AutoMLConfig(
-    csv_path="data/dataset.csv",
-    n_jobs=-1,  # Use all CPU cores
-    ...
-)
-```
-
-### Neo4j Graph Database
-
-Track all experiments in a knowledge graph:
+Third-party datasets are not stored in this repository. The reviewed manifest and lock
+pin OpenML task/dataset versions, targets, licenses, provider checksums, and local
+snapshot SHA-256 values. Downloads go to the ignored `benchmarks/cache/` directory.
 
 ```bash
-# Start Neo4j (Docker)
-docker run -d \
-  --name neo4j-automl \
-  -p 7474:7474 \
-  -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/password \
-  neo4j:latest
-
-# Set credentials for logging/integration tests
-export NEO4J_URI=neo4j://127.0.0.1:7687
-export NEO4J_USER=neo4j
-export NEO4J_PASSWORD=password
+python -m pip install -r benchmarks/environment/requirements-lock.txt
+make benchmark-fetch
+make benchmark-smoke
+make benchmark-full
+make benchmark-report-check
 ```
 
-**Graph Schema**:
-- `(:Dataset)-[:USED_IN]->(:Run)`
-- `(:Model)-[:APPLIED_IN]->(:Run)`
-- `(:Preprocessor)-[:PART_OF]->(:Run)`
+`benchmark-smoke` is offline and generates two local fixtures. `benchmark-report-check`
+regenerates evidence in a temporary directory and compares artifact hashes. The full
+benchmark workflow is manual and sharded; it uploads results for review and never commits
+or publishes changed evidence automatically.
 
-### Web API (FastAPI)
+Committed evidence includes:
+
+- [dataset manifest](benchmarks/datasets.yaml) and [reviewed lock](benchmarks/datasets.lock.json);
+- [benchmark configuration](benchmarks/benchmark_config.yaml);
+- the exact published [Python dependency lock](benchmarks/environment/requirements-lock.txt);
+- compressed [candidate rows](benchmarks/results/candidate_results.csv.gz) and
+  [method rows](benchmarks/results/method_results.csv);
+- [per-dataset summary](benchmarks/results/per_dataset_summary.csv), aggregate JSON, and
+  environment metadata;
+- the [methodology/report](benchmarks/reports/benchmark.md); and
+- deterministic figures in [benchmarks/figures](benchmarks/figures).
+
+## Development and CI
 
 ```bash
-# Start web app
-uvicorn web.app:app --reload
-# or
+make lint
+make test
+make benchmark-smoke
+make benchmark-report-check
+```
+
+The default CI job runs Ruff, the service-free pytest suite with a 70% maintained-code
+coverage gate, an end-to-end CPU search, the offline benchmark smoke profile, and the
+deterministic evidence check. The live Neo4j test is opt-in:
+
+```bash
+RUN_NEO4J_TESTS=1 pytest -q tests/integration/test_neo4j.py
+```
+
+## Architecture
+
+```text
+raw table
+  -> outer development/test split
+  -> development-only metadata + label encoding
+  -> canonical candidate universe
+  -> registry/random/proxy/meta/proxy+meta ordering
+  -> shared fold-local evaluator (sequential or parallel)
+  -> selected candidate refit on development rows
+  -> one untouched-test evaluation
+  -> deployable bundle + schema-v2 history + reports
+```
+
+Key modules:
+
+- `engine/meta_features.py` — canonical feature schema and compatibility hash
+- `engine/meta_history.py` — validated schema-v2 experiment records
+- `engine/splitting.py` — outer and inner split definitions
+- `engine/candidate_evaluator.py` — shared fold and final evaluation
+- `engine/search.py` — candidate generation, ordering, and sequential/parallel execution
+- `engine/bundle.py` — complete pipeline persistence and raw-row reload
+- `benchmarks/` — pinned data provenance, protocol, analysis, results, and figures
+
+## Optional Neo4j and FastAPI components
+
+Set `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD` to enable additive graph logging.
+Run the read API with:
+
+```bash
 make web
-
-# Query API
-curl http://localhost:8000/datasets
-curl http://localhost:8000/datasets/adult/runs
-curl http://localhost:8000/best-models/binary_classification
 ```
 
-## 🎓 Understanding the System
+Graph records store candidate IDs, model identity/family, structured preprocessing,
+objective/display metric values, and provenance. Ranking queries sort by the maximized
+objective rather than by a natural metric whose direction may differ.
 
-### Architecture Flow
+## Limitations
 
-```
-User Input (CSV)
-    ↓
-Dataset Understanding
-    ├── Load CSV with fallback
-    ├── Infer task type
-    ├── Infer column types
-    └── Extract metadata
-    ↓
-Preprocessing Generation
-    ├── Generate strategies
-    └── Rank by proxy (fast evaluation)
-    ↓
-Model Selection
-    └── Filter by task type
-    ↓
-Meta-Learning Ranking (Optional)
-    └── Predict performance → Rank candidates
-    ↓
-Intelligent Search
-    ├── Apply preprocessing
-    ├── Train models
-    ├── Evaluate metrics
-    └── Log results
-    ↓
-Meta-Learning Update
-    └── Retrain on expanded history
-    ↓
-Report Generation
-    └── Markdown/JSON/Text
-```
-
-### Key Design Decisions
-
-1. **Task Type Inference**: Automatically detects regression vs classification
-2. **Proxy Ranking**: Fast evaluation to select top preprocessing strategies
-3. **Meta-Learning**: Learns from past experiments to predict performance
-4. **Threshold Stopping**: Stops early when target metric is reached
-5. **Self-Improvement**: Gets smarter with every experiment
-
-### Performance Optimizations
-
-- **Proxy ranking**: 4x faster (tries top 3 preprocessing instead of all 12)
-- **Meta-learning**: 10x faster (tries top 10 candidates instead of all 24)
-- **Parallel execution**: 4-8x speedup on multi-core systems
-- **Early stopping**: Saves compute on poor configurations
-- **Threshold stopping**: Stops when target is reached
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**JSON Serialization Error**:
-- Fixed: Non-serializable objects (LabelEncoder, etc.) are removed before JSON dump
-
-**Label Column Not Detected**:
-- The system tries common names: "target", "label", "y", "class", "income", etc.
-- If auto-detection fails, specify manually: `--label your_label_column`
-
-**Out of Memory**:
-- Reduce `n_jobs` (e.g., `n_jobs=2` instead of `-1`)
-- Use smaller datasets for testing
-
-**Meta-Learning Not Working**:
-- Requires at least 5-10 past experiments
-- Check `experiments/meta_train.csv` has data
-- Meta-models saved as `meta_model_{task}_{metric}.pkl`
-
-## 📊 Example Results
-
-### Paddy Dataset (Regression)
-
-```
-Input: paddydataset.csv (regression, 2789 samples, 44 features)
-↓
-Task Inference: regression (477 unique values)
-↓
-Preprocessing: Generated 12 strategies, ranked top 3
-↓
-Models: Selected 8 regression models
-↓
-Meta-Learning: Ranked candidates by predicted performance
-↓
-Training: Tried top candidates
-↓
-Result: gb_reg + median_robust → R² = 0.9933
-↓
-Report: Generated in experiments/reports/
-```
-
-### Adult Dataset (Classification)
-
-```
-Input: adult.csv (binary classification, 32561 samples, 14 features)
-↓
-Task Inference: binary_classification (2 classes)
-↓
-Preprocessing: Generated strategies, ranked top 3
-↓
-Models: Selected 7 classification models
-↓
-Result: rf + numeric_plus_cat_onehot → Accuracy = 0.86
-```
-
-## 🔮 Future Enhancements
-
-- [ ] Hyperparameter tuning (grid/random/Bayesian)
-- [ ] Feature engineering search space
-- [ ] Ensemble methods (stacking, voting)
-- [ ] Advanced preprocessing (target encoding, PCA)
-- [ ] Cross-validation option
-- [ ] Model interpretability (SHAP values)
-- [ ] Auto-deployment mode
-- [ ] Experiment tracking integration (MLflow, W&B)
-
-## 📝 Key Files Reference
-
-- **`main.py`**: CLI entry point
-- **`engine/orchestrator.py`**: Main pipeline coordinator
-- **`engine/intelligent_search.py`**: Search engine
-- **`engine/meta_learner.py`**: Meta-learning brain
-- **`engine/preprocessing_strategies.py`**: Preprocessing generation
-- **`utils/datasets.py`**: Dataset loading & understanding
-- **`models/model_zoo.py`**: Model registry
-
-## 🎉 Summary
-
-This AutoML system is a **complete, intelligent, self-improving platform** that:
-- Understands datasets automatically
-- Chooses preprocessing intelligently
-- Uses meta-learning to avoid brute force
-- Generates comprehensive reports
-- Learns from every experiment
-
-**It's not just code - it's a thinking machine that gets smarter with every experiment!** 🧠✨
+- Evidence applies only to the named 15-dataset suite, three outer seeds, and the fixed
+  28–36-pipeline universe; it does not establish global model optimality.
+- The published method runtime plot uses measured fold times with replay-equivalent
+  ordering overhead. A separately controlled cold wall-clock study remains future work.
+- Candidate failures are retained, but power transformation failed on
+  [18 candidate runs](benchmarks/reports/benchmark.md) in the published evidence.
+- Meta-ranking has a cold-start limitation when fewer than 20 compatible history rows
+  exist.
+- Text columns and non-tabular tasks are unsupported.

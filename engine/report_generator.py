@@ -1,222 +1,168 @@
-"""
-Automatic report generation for AutoML experiments.
-"""
+"""Human- and machine-readable reports with separate selection/test results."""
 
-from typing import Dict, List, Any
-from pathlib import Path
-import pandas as pd
+from __future__ import annotations
+
 import json
-from datetime import datetime
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+REPORT_SCHEMA_VERSION = 2
+
+
+def _native(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, dict):
+        return {str(key): _native(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_native(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return repr(value)
+
+
+def _successful_results(all_results: list[dict]) -> list[dict]:
+    return sorted(
+        (result for result in all_results if result.get("selection_cv_mean") is not None),
+        key=lambda result: float(result["selection_cv_mean"]),
+        reverse=True,
+    )
 
 
 def generate_report(
     dataset_name: str,
     task_type: str,
-    best_info: Dict,
-    all_results: List[Dict],
-    dataset_meta: Dict,
+    best_info: dict,
+    all_results: list[dict],
+    dataset_meta: dict,
     time_taken: float,
     output_dir: str = "experiments/reports",
-) -> Dict[str, str]:
-    """
-    Generate comprehensive report for AutoML run.
-    
-    Returns:
-        Dictionary with paths to generated reports (markdown, json, text)
-    """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_name = f"{dataset_name}_{timestamp}"
-    
-    # Generate Markdown report
-    md_path = output_dir / f"{base_name}.md"
-    md_content = generate_markdown_report(
-        dataset_name, task_type, best_info, all_results, dataset_meta, time_taken
+) -> dict[str, str]:
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    generated_at = datetime.now(UTC)
+    base_name = f"{dataset_name}_{generated_at.strftime('%Y%m%d_%H%M%S')}"
+    payload = generate_json_report(
+        dataset_name,
+        task_type,
+        best_info,
+        all_results,
+        dataset_meta,
+        time_taken,
+        generated_at=generated_at,
     )
-    md_path.write_text(md_content)
-    
-    # Generate JSON report
-    json_path = output_dir / f"{base_name}.json"
-    json_content = generate_json_report(
-        dataset_name, task_type, best_info, all_results, dataset_meta, time_taken
-    )
-    
-    # Remove non-serializable objects from dataset_meta before JSON serialization
-    # This includes LabelEncoder and other sklearn objects
-    if "dataset_meta" in json_content:
-        # Remove label_encoder (not JSON serializable)
-        json_content["dataset_meta"].pop("label_encoder", None)
-        # Remove any other sklearn/preprocessing objects
-        keys_to_remove = []
-        for key, value in json_content["dataset_meta"].items():
-            # Check if it's a non-serializable object
-            if hasattr(value, '__class__') and not isinstance(value, (int, float, str, bool, list, dict, type(None))):
-                # Check if it's a numpy/scikit-learn object
-                import numpy as np
-                if isinstance(value, (np.ndarray, np.generic)):
-                    continue  # Will be handled by convert_to_native
-                # It's likely a custom object (LabelEncoder, etc.)
-                keys_to_remove.append(key)
-        for key in keys_to_remove:
-            json_content["dataset_meta"].pop(key, None)
-    
-    # Convert numpy types to native Python types for JSON serialization
-    def convert_to_native(obj):
-        import numpy as np
-        from sklearn.preprocessing import LabelEncoder
-        
-        # Handle numpy types
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.bool_):
-            return bool(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        
-        # Handle non-serializable objects (LabelEncoder, etc.)
-        if hasattr(obj, '__class__'):
-            class_name = obj.__class__.__name__
-            if class_name in ['LabelEncoder', 'StandardScaler', 'OneHotEncoder', 'SimpleImputer']:
-                # Return string representation instead of object
-                return f"{class_name}()"
-        
-        # Handle collections
-        if isinstance(obj, dict):
-            return {key: convert_to_native(value) for key, value in obj.items()}
-        elif isinstance(obj, list):
-            return [convert_to_native(item) for item in obj]
-        
-        return obj
-    
-    json_content = convert_to_native(json_content)
-    json_path.write_text(json.dumps(json_content, indent=2))
-    
-    # Generate text report
-    txt_path = output_dir / f"{base_name}.txt"
-    txt_content = generate_text_report(
-        dataset_name, task_type, best_info, all_results, dataset_meta, time_taken
-    )
-    txt_path.write_text(txt_content)
-    
-    print(f"\n[INFO] Reports generated:")
-    print(f"  - Markdown: {md_path}")
-    print(f"  - JSON: {json_path}")
-    print(f"  - Text: {txt_path}")
-    
-    return {
-        "markdown": str(md_path),
-        "json": str(json_path),
-        "text": str(txt_path),
+    paths = {
+        "markdown": output / f"{base_name}.md",
+        "json": output / f"{base_name}.json",
+        "text": output / f"{base_name}.txt",
     }
-
-
-def generate_markdown_report(
-    dataset_name: str,
-    task_type: str,
-    best_info: Dict,
-    all_results: List[Dict],
-    dataset_meta: Dict,
-    time_taken: float,
-) -> str:
-    """Generate Markdown report."""
-    lines = []
-    lines.append(f"# AutoML Experiment Report: {dataset_name}")
-    lines.append(f"\n**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"\n## Dataset Overview\n")
-    lines.append(f"- **Task Type:** {task_type}")
-    lines.append(f"- **Samples:** {dataset_meta.get('n_samples', 'N/A')}")
-    lines.append(f"- **Features:** {dataset_meta.get('n_features', 'N/A')}")
-    lines.append(f"- **Numeric Features:** {dataset_meta.get('n_numeric', 'N/A')}")
-    lines.append(f"- **Categorical Features:** {dataset_meta.get('n_categorical', 'N/A')}")
-    if task_type != "regression":
-        lines.append(f"- **Classes:** {dataset_meta.get('n_classes', 'N/A')}")
-        lines.append(f"- **Class Imbalance:** {dataset_meta.get('class_imbalance', 0):.3f}")
-    
-    lines.append(f"\n## Best Model\n")
-    if best_info:
-        lines.append(f"- **Model:** {best_info['model_name']}")
-        lines.append(f"- **Preprocessing:** {best_info.get('preprocessing_name', 'N/A')}")
-        lines.append(f"- **Metric ({best_info['metric_name']}):** {best_info['metric']:.4f}")
-    
-    lines.append(f"\n## All Models Tried\n")
-    lines.append("| Model | Preprocessing | Metric |")
-    lines.append("|-------|---------------|--------|")
-    for result in sorted(all_results, key=lambda x: x.get('metric', 0), reverse=True):
-        lines.append(f"| {result.get('model_name', 'N/A')} | {result.get('preprocessing_name', 'N/A')} | {result.get('metric', 0):.4f} |")
-    
-    lines.append(f"\n## Performance Summary\n")
-    lines.append(f"- **Total Time:** {time_taken:.2f} seconds")
-    lines.append(f"- **Models Tried:** {len(all_results)}")
-    
-    lines.append(f"\n## Next Steps\n")
-    if best_info:
-        lines.append(f"1. The best model is **{best_info['model_name']}** with preprocessing **{best_info.get('preprocessing_name', 'N/A')}**")
-        lines.append(f"2. Consider fine-tuning hyperparameters for further improvement")
-        lines.append(f"3. Evaluate on a held-out test set for final validation")
-    
-    return "\n".join(lines)
+    paths["markdown"].write_text(generate_markdown_report(payload))
+    paths["json"].write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    paths["text"].write_text(generate_text_report(payload))
+    return {name: str(path) for name, path in paths.items()}
 
 
 def generate_json_report(
     dataset_name: str,
     task_type: str,
-    best_info: Dict,
-    all_results: List[Dict],
-    dataset_meta: Dict,
+    best_info: dict,
+    all_results: list[dict],
+    dataset_meta: dict,
     time_taken: float,
-) -> Dict:
-    """Generate JSON report."""
-    return {
-        "dataset_name": dataset_name,
-        "task_type": task_type,
-        "timestamp": datetime.now().isoformat(),
-        "dataset_meta": dataset_meta,
-        "best_model": best_info,
-        "all_results": all_results,
-        "performance": {
-            "time_taken": time_taken,
-            "models_tried": len(all_results),
-        },
-    }
+    *,
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
+    generated_at = generated_at or datetime.now(UTC)
+    return _native(
+        {
+            "report_schema_version": REPORT_SCHEMA_VERSION,
+            "generated_at": generated_at.isoformat(),
+            "dataset_name": dataset_name,
+            "task_type": task_type,
+            "dataset_meta": dataset_meta,
+            "selection": {
+                "candidate_id": best_info.get("candidate_id"),
+                "model_identity": best_info.get("model_name"),
+                "preprocessing_name": best_info.get("preprocessing_name"),
+                "metric_name": best_info.get("metric_name"),
+                "selection_cv_mean": best_info.get("selection_cv_mean"),
+                "selection_cv_std": best_info.get("selection_cv_std"),
+            },
+            "final_test": {
+                "test_score": best_info.get("test_score"),
+                "generalization_gap": best_info.get("generalization_gap"),
+            },
+            "bundle_path": best_info.get("bundle_path"),
+            "candidate_results": all_results,
+            "performance": {
+                "time_taken_seconds": time_taken,
+                "candidates_attempted": len(all_results),
+                "candidate_failures": sum(
+                    result.get("status") != "success" for result in all_results
+                ),
+            },
+        }
+    )
 
 
-def generate_text_report(
-    dataset_name: str,
-    task_type: str,
-    best_info: Dict,
-    all_results: List[Dict],
-    dataset_meta: Dict,
-    time_taken: float,
-) -> str:
-    """Generate plain text report."""
-    lines = []
-    lines.append("=" * 60)
-    lines.append(f"AutoML Experiment Report: {dataset_name}")
-    lines.append("=" * 60)
-    lines.append(f"\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"\nDataset Overview:")
-    lines.append(f"  Task Type: {task_type}")
-    lines.append(f"  Samples: {dataset_meta.get('n_samples', 'N/A')}")
-    lines.append(f"  Features: {dataset_meta.get('n_features', 'N/A')}")
-    
-    lines.append(f"\nBest Model:")
-    if best_info:
-        lines.append(f"  Model: {best_info['model_name']}")
-        lines.append(f"  Preprocessing: {best_info.get('preprocessing_name', 'N/A')}")
-        lines.append(f"  Metric ({best_info['metric_name']}): {best_info['metric']:.4f}")
-    
-    lines.append(f"\nAll Models (sorted by performance):")
-    for i, result in enumerate(sorted(all_results, key=lambda x: x.get('metric', 0), reverse=True), 1):
-        lines.append(f"  {i}. {result.get('model_name', 'N/A')} + {result.get('preprocessing_name', 'N/A')}: {result.get('metric', 0):.4f}")
-    
-    lines.append(f"\nPerformance:")
-    lines.append(f"  Time Taken: {time_taken:.2f} seconds")
-    lines.append(f"  Models Tried: {len(all_results)}")
-    lines.append("=" * 60)
-    
-    return "\n".join(lines)
+def generate_markdown_report(payload: dict[str, Any], *legacy_args: Any) -> str:
+    if legacy_args:
+        raise TypeError("generate_markdown_report now accepts a schema-v2 report payload")
+    meta = payload["dataset_meta"]
+    selection = payload["selection"]
+    final = payload["final_test"]
+    lines = [
+        f"# AutoML Experiment Report: {payload['dataset_name']}",
+        "",
+        f"Generated: {payload['generated_at']}",
+        "",
+        "## Dataset",
+        "",
+        f"- Task: {payload['task_type']}",
+        f"- Development rows: {meta.get('n_samples', 'N/A')}",
+        f"- Features: {meta.get('n_features', 'N/A')}",
+        f"- Missing-value fraction: {meta.get('missing_value_fraction', 'N/A')}",
+        "",
+        "## Selection and final evaluation",
+        "",
+        f"- Candidate: {selection.get('candidate_id') or 'N/A'}",
+        f"- Model: {selection.get('model_identity') or 'N/A'}",
+        f"- Preprocessing: {selection.get('preprocessing_name') or 'N/A'}",
+        f"- Selection CV mean: {selection.get('selection_cv_mean')}",
+        f"- Selection CV std: {selection.get('selection_cv_std')}",
+        f"- Untouched test score: {final.get('test_score')}",
+        f"- Direction-adjusted generalization gap: {final.get('generalization_gap')}",
+        "",
+        "## Candidate results",
+        "",
+        "| Model | Preprocessing | CV mean | CV std | Status |",
+        "|---|---|---:|---:|---|",
+    ]
+    for result in _successful_results(payload["candidate_results"]):
+        lines.append(
+            f"| {result.get('model_name')} | {result.get('preprocessing_name')} | "
+            f"{result.get('selection_cv_mean')} | {result.get('selection_cv_std')} | "
+            f"{result.get('status')} |"
+        )
+    return "\n".join(lines) + "\n"
 
+
+def generate_text_report(payload: dict[str, Any], *legacy_args: Any) -> str:
+    if legacy_args:
+        raise TypeError("generate_text_report now accepts a schema-v2 report payload")
+    selection = payload["selection"]
+    final = payload["final_test"]
+    return (
+        f"MetaLearnML report: {payload['dataset_name']}\n"
+        f"Task: {payload['task_type']}\n"
+        f"Selected: {selection.get('model_identity')} + "
+        f"{selection.get('preprocessing_name')}\n"
+        f"CV: {selection.get('selection_cv_mean')} ± {selection.get('selection_cv_std')}\n"
+        f"Untouched test: {final.get('test_score')}\n"
+        f"Generalization gap: {final.get('generalization_gap')}\n"
+    )

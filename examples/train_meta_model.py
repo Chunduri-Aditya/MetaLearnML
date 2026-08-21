@@ -3,8 +3,9 @@ Train the meta-model (optimization proxy) on historical experiment results.
 Run this periodically to update the proxy as you accumulate more experiments.
 """
 
-from meta.meta_model import train_meta_model
 from pathlib import Path
+
+from meta.meta_model import train_meta_model
 
 
 def main():
@@ -12,16 +13,16 @@ def main():
     print("Training Meta-Model (Optimization Proxy)")
     print("=" * 60)
     print()
-    
+
     results_csv = "experiments/results.csv"
-    
+
     if not Path(results_csv).exists():
         print(f"[ERROR] {results_csv} not found.")
         print("Run some experiments first to generate training data.")
         return
-    
+
     try:
-        pipe = train_meta_model(results_csv)
+        train_meta_model(results_csv)
         print()
         print("=" * 60)
         print("✓ Meta-model training complete!")
@@ -38,9 +39,9 @@ def main():
     except Exception as e:
         print(f"[ERROR] Failed to train meta-model: {e}")
         import traceback
+
         traceback.print_exc()
 
 
 if __name__ == "__main__":
     main()
-

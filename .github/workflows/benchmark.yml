@@ -1,0 +1,61 @@
+name: Full benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: benchmarks/environment/requirements-lock.txt
+      - run: python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<2.7"
+      - run: python -m pip install -r benchmarks/environment/requirements-lock.txt
+      - run: python -m benchmarks.run fetch
+      - run: >-
+          python -m benchmarks.run measure
+          --shard-index ${{ matrix.shard }} --shard-count 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-cache-${{ matrix.shard }}
+          path: benchmarks/cache/
+          retention-days: 14
+
+  aggregate:
+    needs: measure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: benchmarks/environment/requirements-lock.txt
+      - run: python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<2.7"
+      - run: python -m pip install -r benchmarks/environment/requirements-lock.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-cache-*
+          path: benchmarks/cache
+          merge-multiple: true
+      - run: python -m benchmarks.run full
+      - run: python -m benchmarks.run report-check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-benchmark-results
+          path: |
+            benchmarks/results/
+            benchmarks/reports/
+            benchmarks/figures/
+          retention-days: 30

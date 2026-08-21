@@ -1,0 +1,27 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = ["engine/legacy"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.coverage.run]
+branch = false
+source = ["engine", "models", "utils"]
+omit = ["engine/legacy/*"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_covered = true
+exclude_lines = [
+  "pragma: no cover",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]

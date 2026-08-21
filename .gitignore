@@ -49,12 +49,17 @@ experiments/reports/*.json
 experiments/reports/*.txt
 experiments/reports/*.md
 experiments/results.csv
+experiments/smoke_results.csv
 experiments/meta_train.csv
 
-# Data files (uncomment if you don't want to track data)
-# data/*.csv
+# Local/generated data. Published benchmark snapshots live in the ignored cache.
+data/*.csv
 # data/*.json
 # data/*.parquet
+
+# Downloaded/reusable benchmark working data (published result rows remain tracked)
+benchmarks/cache/
+benchmarks/smoke-output/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -63,6 +68,8 @@ experiments/meta_train.csv
 # pytest
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 .tox/
 .hypothesis/

@@ -1,15 +1,20 @@
 # online_demo.py
 
+from pathlib import Path
+
 import torch
+from engine.online_controller import OnlineController
 from torch.utils.data import DataLoader, random_split
 
-from utils.datasets import load_csv_classification
-from engine.online_controller import OnlineController
 from engine.evaluator import accuracy_metric
+from examples.prepare_datasets import prepare_iris
+from utils.datasets import load_csv_classification
 
 
 def main():
     # 1. Load Iris dataset
+    if not Path("data/iris.csv").exists():
+        prepare_iris()
     dataset, in_dim, out_dim = load_csv_classification(
         path="data/iris.csv",
         feature_cols=[
@@ -48,10 +53,10 @@ def main():
     controller.fine_tune_on_stream(
         data_stream=stream_loader,
         base_config=base_config,
-        challenge_every=3,     # every 3 batches, try a challenger
-        challenge_epochs=3,    # challengers get a few short epochs
+        challenge_every=3,  # every 3 batches, try a challenger
+        challenge_epochs=3,  # challengers get a few short epochs
         metric_fn=accuracy_metric,
-        promote_margin=0.02,   # require challenger to be clearly better
+        promote_margin=0.02,  # require challenger to be clearly better
     )
 
 

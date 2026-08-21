@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            requirements-benchmark.txt
+            benchmarks/environment/requirements-lock.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<2.7"
+          python -m pip install -r benchmarks/environment/requirements-lock.txt
+      - name: Ruff
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Tests and coverage
+        run: >-
+          pytest -q -m "not slow and not neo4j"
+          --cov=engine --cov=models --cov=utils
+          --cov-report=term-missing --cov-report=xml
+      - name: Offline benchmark smoke
+        run: python -m benchmarks.run smoke
+      - name: Deterministic evidence check
+        run: python -m benchmarks.run report-check
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-diagnostics
+          if-no-files-found: ignore
+          path: |
+            coverage.xml
+            benchmarks/smoke-output/

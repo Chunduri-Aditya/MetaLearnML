@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metalearnml.local/schemas/benchmark-summary-v1.json",
+  "title": "MetaLearnML aggregate benchmark summary",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "profile",
+    "dataset_count",
+    "outer_seeds",
+    "candidate_count_range",
+    "methods",
+    "primary_paired_comparison",
+    "impact_resume_bullet_eligible"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "profile": {"const": "balanced-15-v1"},
+    "dataset_count": {"type": "integer", "minimum": 10},
+    "outer_seeds": {
+      "type": "array",
+      "items": {"type": "integer"},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "candidate_count_range": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1},
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "methods": {"type": "object", "minProperties": 5},
+    "primary_paired_comparison": {"type": "object"},
+    "impact_resume_bullet_eligible": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}

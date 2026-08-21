@@ -3,6 +3,7 @@ Utilities for setting random seeds for reproducibility.
 """
 
 import random
+
 import numpy as np
 import torch
 
@@ -10,7 +11,7 @@ import torch
 def set_seed(seed: int = 42):
     """
     Set random seeds for reproducibility.
-    
+
     Args:
         seed: Random seed value
     """
@@ -28,5 +29,5 @@ def get_seed_from_env() -> int:
     Get seed from environment variable SEED, default to 42.
     """
     import os
-    return int(os.getenv("SEED", "42"))
 
+    return int(os.getenv("SEED", "42"))

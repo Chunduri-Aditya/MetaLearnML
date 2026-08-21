@@ -4,16 +4,16 @@ FastAPI web application for AutoML Graph Explorer.
 Provides REST API to query the Neo4j knowledge graph of AutoML experiments.
 """
 
-from fastapi import FastAPI, Query, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional, List
 import sys
 from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from graph.neo4j_client import Neo4jGraph, Neo4jConfig
+from graph.neo4j_client import Neo4jGraph
 
 app = FastAPI(
     title="AutoML Graph Explorer",
@@ -51,7 +51,7 @@ def root():
             "models": "/models",
             "model_performance": "/models/{model_name}/performance",
             "best_models": "/best-models/{task_type}",
-        }
+        },
     }
 
 
@@ -144,5 +144,5 @@ def get_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
+    uvicorn.run(app, host="0.0.0.0", port=8000)

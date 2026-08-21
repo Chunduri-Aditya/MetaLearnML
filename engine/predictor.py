@@ -2,21 +2,21 @@
 
 import csv
 from pathlib import Path
-from typing import Optional, Tuple, Union
 
-import torch
-import numpy as np
 import joblib
+import numpy as np
+import pandas as pd
+import torch
 
 from models.model_zoo import build_model
 
 
-def _load_best_from_csv(results_csv: str) -> Tuple[str, float, str]:
+def _load_best_from_csv(results_csv: str) -> tuple[str, float, str]:
     """
     Reads the results.csv and returns (model_name, metric, ckpt_path)
     for the row with the best metric.
     """
-    best_row: Optional[dict] = None
+    best_row: dict | None = None
     path = Path(results_csv)
 
     if not path.exists():
@@ -48,11 +48,32 @@ def _load_best_from_csv(results_csv: str) -> Tuple[str, float, str]:
 class BestModelPredictor:
     def __init__(
         self,
-        results_csv: str,
-        in_dim: int,
-        out_dim: int,
-        device: Optional[str] = None,
+        results_csv: str | None = None,
+        in_dim: int | None = None,
+        out_dim: int | None = None,
+        device: str | None = None,
+        *,
+        bundle_path: str | None = None,
     ):
+        self.bundle = None
+        if bundle_path is not None:
+            from engine.bundle import load_pipeline_bundle
+
+            self.bundle = load_pipeline_bundle(bundle_path, device=device or "cpu")
+            self.results_csv = results_csv
+            self.in_dim = self.bundle.manifest["transformed_input_dim"]
+            self.out_dim = self.bundle.manifest["output_dim"]
+            self.device = device or "cpu"
+            self.model_name = self.bundle.manifest["model_identity"]
+            self.best_metric = self.bundle.manifest.get("test_score")
+            self.ckpt_path = bundle_path
+            self.model = self.bundle.model
+            return
+        if results_csv is None or in_dim is None or out_dim is None:
+            raise TypeError(
+                "Provide bundle_path for v2 raw-row prediction, or results_csv/in_dim/out_dim "
+                "for the deprecated checkpoint adapter"
+            )
         self.results_csv = results_csv
         self.in_dim = in_dim
         self.out_dim = out_dim
@@ -65,19 +86,20 @@ class BestModelPredictor:
 
         # Build and load the model based on backend
         from models.model_zoo import MODEL_REGISTRY
+
         backend = MODEL_REGISTRY.get(model_name, {}).get("backend", "torch")
-        
+
         if backend == "sklearn":
             # Sklearn model: load using joblib
             # Check for .joblib extension first, fallback to .pkl for backward compatibility
-            if ckpt_path.endswith('.joblib'):
+            if ckpt_path.endswith(".joblib"):
                 sk_path = ckpt_path
-            elif ckpt_path.endswith('.pkl'):
+            elif ckpt_path.endswith(".pkl"):
                 sk_path = ckpt_path
             else:
                 # Replace .pth with .joblib
-                sk_path = ckpt_path.replace('.pth', '.joblib')
-            
+                sk_path = ckpt_path.replace(".pth", ".joblib")
+
             # Load the entire wrapper (includes fitted sklearn model + scaler)
             self.model = joblib.load(sk_path)
             # Sklearn models don't need .to(device) but we can still call eval()
@@ -90,7 +112,7 @@ class BestModelPredictor:
             self.model.to(self.device)
             self.model.eval()
 
-    def _to_tensor(self, x: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+    def _to_tensor(self, x: np.ndarray | torch.Tensor) -> torch.Tensor:
         """Convert input to tensor efficiently."""
         if isinstance(x, np.ndarray):
             # Use float32 for memory efficiency
@@ -102,17 +124,21 @@ class BestModelPredictor:
         return x
 
     @torch.no_grad()
-    def predict_logits(self, x: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+    def predict_logits(self, x: np.ndarray | torch.Tensor) -> torch.Tensor:
         """
         Returns raw logits from the best model.
         Shape: [N, out_dim]
         """
+        if self.bundle is not None:
+            if not isinstance(x, pd.DataFrame):
+                raise TypeError("A v2 pipeline bundle requires raw input as a pandas DataFrame")
+            return self.bundle.predict_outputs(x)
         x = self._to_tensor(x).to(self.device)
         logits = self.model(x)
         return logits.detach().cpu()
 
     @torch.no_grad()
-    def predict_proba(self, x: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+    def predict_proba(self, x: np.ndarray | torch.Tensor) -> torch.Tensor:
         """
         Returns softmax probabilities over classes.
         """
@@ -121,10 +147,22 @@ class BestModelPredictor:
         return probs
 
     @torch.no_grad()
-    def predict_classes(self, x: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+    def predict_classes(self, x: np.ndarray | torch.Tensor) -> torch.Tensor:
         """
         Returns predicted class indices [N].
         """
+        if self.bundle is not None and isinstance(x, pd.DataFrame):
+            return self.bundle.predict(x)
         probs = self.predict_proba(x)
         preds = torch.argmax(probs, dim=1)
         return preds
+
+    def predict_raw(self, frame: pd.DataFrame):
+        """Predict labels or regression values from raw rows using a v2 bundle."""
+        if self.bundle is None:
+            raise RuntimeError("predict_raw requires a v2 bundle_path")
+        return self.bundle.predict(frame)
+
+    def predict_dataframe(self, frame: pd.DataFrame):
+        """Explicit DataFrame-named alias for v2 raw-row prediction."""
+        return self.predict_raw(frame)

@@ -1,0 +1,98 @@
+{
+  "candidate_count_range": [
+    28,
+    36
+  ],
+  "dataset_count": 15,
+  "failures": 18,
+  "impact_resume_bullet_eligible": false,
+  "methods": {
+    "exhaustive": {
+      "candidate_failures": 9,
+      "median_final_test_normalized_regret": 0.0,
+      "median_ndcg_at_5": 0.0823890522478567,
+      "median_normalized_regret": 0.0,
+      "median_recall_at_5": 0.2,
+      "median_spearman": 0.0437876299945265,
+      "normalized_regret_iqr": [
+        0.0,
+        0.0
+      ],
+      "rows": 45
+    },
+    "meta": {
+      "candidate_failures": 9,
+      "median_final_test_normalized_regret": 0.0,
+      "median_ndcg_at_5": 0.184969702646188,
+      "median_normalized_regret": 1.1693194712968077e-07,
+      "median_recall_at_5": 0.4,
+      "median_spearman": 0.5675675675675675,
+      "normalized_regret_iqr": [
+        0.0,
+        0.0075370210516169
+      ],
+      "rows": 315
+    },
+    "proxy": {
+      "candidate_failures": 9,
+      "median_final_test_normalized_regret": 0.0,
+      "median_ndcg_at_5": 0.082329364046525,
+      "median_normalized_regret": 4.098525719395041e-06,
+      "median_recall_at_5": 0.2,
+      "median_spearman": 0.0288473981246858,
+      "normalized_regret_iqr": [
+        0.0,
+        0.0088864428404229
+      ],
+      "rows": 315
+    },
+    "proxy_meta": {
+      "candidate_failures": 9,
+      "median_final_test_normalized_regret": 0.0,
+      "median_ndcg_at_5": 0.1914298635186193,
+      "median_normalized_regret": 0.0,
+      "median_recall_at_5": 0.4,
+      "median_spearman": 0.406975996724069,
+      "normalized_regret_iqr": [
+        0.0,
+        0.0075370210516169
+      ],
+      "rows": 315
+    },
+    "random": {
+      "candidate_failures": 9,
+      "median_final_test_normalized_regret": 0.0,
+      "median_ndcg_at_5": 0.04456108163666375,
+      "median_normalized_regret": 0.0010232969517336,
+      "median_recall_at_5": 0.2,
+      "median_spearman": 0.0216216216216216,
+      "normalized_regret_iqr": [
+        8.95167333341925e-08,
+        0.03671388438443372
+      ],
+      "rows": 315
+    }
+  },
+  "outer_seeds": [
+    13,
+    42,
+    97
+  ],
+  "primary_paired_comparison": {
+    "bootstrap_95_ci": [
+      0.0,
+      0.5
+    ],
+    "bootstrap_replicates": 10000,
+    "bootstrap_seed": 2026,
+    "bootstrap_unit": "dataset",
+    "comparison": "proxy_meta_vs_random_evaluations_to_regret_le_0.05",
+    "dataset_median_reduction_fraction": 0.0
+  },
+  "profile": "balanced-15-v1",
+  "proxy_meta_budget_10": {
+    "median_final_test_normalized_regret": 0.0,
+    "median_quality_retention": 1.0
+  },
+  "schema_version": 1
+}

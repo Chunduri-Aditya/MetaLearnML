@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -8,6 +7,7 @@ class MLPBlock(nn.Module):
     Standard MLP block with BatchNorm and Dropout.
     This makes MLPs much more competitive on real datasets.
     """
+
     def __init__(self, in_dim, out_dim, dropout=0.2):
         super().__init__()
         self.linear = nn.Linear(in_dim, out_dim)
@@ -26,8 +26,10 @@ class MLPBlock(nn.Module):
 
 class MLPRegressor(nn.Module):
     """MLP for regression tasks."""
-    def __init__(self, in_dim, hidden_dims=[128, 64], dropout=0.2):
+
+    def __init__(self, in_dim, hidden_dims=None, dropout=0.2):
         super().__init__()
+        hidden_dims = hidden_dims or [128, 64]
         layers = []
         last = in_dim
         for h in hidden_dims:
@@ -43,8 +45,10 @@ class MLPRegressor(nn.Module):
 
 class MLPClassifier(nn.Module):
     """MLP for classification tasks."""
-    def __init__(self, in_dim, n_classes, hidden_dims=[128, 64], dropout=0.3):
+
+    def __init__(self, in_dim, n_classes, hidden_dims=None, dropout=0.3):
         super().__init__()
+        hidden_dims = hidden_dims or [128, 64]
         layers = []
         last = in_dim
         for h in hidden_dims:
@@ -88,4 +92,3 @@ class MLP_Medium_Reg(MLPRegressor):
 class MLP_Deep_Reg(MLPRegressor):
     def __init__(self, in_dim, out_dim=1):
         super().__init__(in_dim, hidden_dims=[256, 128, 64, 32], dropout=0.3)
-

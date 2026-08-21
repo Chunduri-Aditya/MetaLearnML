@@ -1,0 +1,23 @@
+schema_version: 1
+provider: openml
+datasets:
+  - {id: iris, openml_task_id: 59, task_type: multiclass_classification}
+  - {id: credit-g, openml_task_id: 31, task_type: binary_classification}
+  - {id: adult, openml_task_id: 7592, task_type: binary_classification}
+  - {id: phoneme, openml_task_id: 9952, task_type: binary_classification}
+  - {id: dresses-sales, openml_task_id: 125920, task_type: binary_classification}
+  - {id: eucalyptus, openml_task_id: 2079, task_type: multiclass_classification}
+  - {id: bioresponse, openml_task_id: 9910, task_type: binary_classification}
+  - {id: micro-mass, openml_task_id: 9950, task_type: multiclass_classification}
+  - {id: sensory, openml_task_id: 359931, task_type: regression}
+  - {id: house-prices-nominal, openml_task_id: 359951, task_type: regression}
+  - {id: quake, openml_task_id: 359930, task_type: regression}
+  - {id: abalone, openml_task_id: 359944, task_type: regression}
+  - {id: wine-quality, openml_task_id: 359935, task_type: regression}
+  - id: colleges
+    openml_task_id: 359942
+    task_type: regression
+    license_override: CC-BY
+    license_source: https://catalog.data.gov/dataset/college-scorecard
+    license_note: OpenML metadata is NA; override reviewed against the upstream U.S. College Scorecard catalog.
+  - {id: elevators, openml_task_id: 359936, task_type: regression}
