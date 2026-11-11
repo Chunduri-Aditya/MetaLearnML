@@ -68,7 +68,14 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 ```
 
-Run a CSV through the existing autopilot interface:
+Try it on the bundled sample, the 150 row iris table from scikit-learn (about 10 seconds on CPU):
+
+```bash
+python main.py --autopilot examples/data/iris.csv --label species
+```
+
+The report lands in `experiments/reports/` and the selected pipeline in `saved_models/`.
+Run your own CSV the same way:
 
 ```bash
 python main.py --autopilot /path/to/table.csv --label target
