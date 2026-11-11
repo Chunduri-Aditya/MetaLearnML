@@ -113,3 +113,4 @@ logs/
 *.bak
 *.cache
 cleanup_report.json
+.fable/
