@@ -1014,13 +1014,14 @@ if __name__ == "__main__":
 
         from engine.config import AutoMLConfig
         from engine.orchestrator import run_automl
+        from utils.kaggle_source import resolve as resolve_source
 
         print("\n" + "=" * 60)
         print("🤖 AutoML Autopilot Mode")
         print("=" * 60)
 
         config = AutoMLConfig(
-            csv_path=args.autopilot,
+            csv_path=resolve_source(args.autopilot),
             label_col=args.label,
             metric_name=args.metric,
             target_metric=args.target,

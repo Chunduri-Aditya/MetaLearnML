@@ -114,3 +114,4 @@ logs/
 *.cache
 cleanup_report.json
 .fable/
+data/kaggle/
