@@ -67,7 +67,7 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 ```
 
-Try it on the bundled sample, the 150 row iris table from scikit-learn (about 10 seconds on CPU):
+Try it on the bundled sample, the 150 row iris table from scikit-learn. The run takes 4 to 50 seconds on an Apple M3 Pro CPU. The first run after a fresh install took 50 seconds. Later runs took 4 to 5 seconds:
 
 ```bash
 python main.py --autopilot examples/data/iris.csv --label species
@@ -147,13 +147,18 @@ Normal runs persist a directory containing the fitted preprocessor, fitted estim
 state, label encoder, expected columns/types, candidate configuration, metric metadata,
 and package/schema versions.
 
+The iris quick start writes its bundle to `saved_models/iris_best_pipeline`. Run this from the
+repository root:
+
 ```python
 import pandas as pd
 
 from engine.predictor import BestModelPredictor
 
-predictor = BestModelPredictor(bundle_path="saved_models/my_dataset_best_pipeline")
-predictions = predictor.predict_dataframe(pd.DataFrame([{"age": 42, "segment": "new"}]))
+predictor = BestModelPredictor(bundle_path="saved_models/iris_best_pipeline")
+row = {"sepal_length": 5.1, "sepal_width": 3.5, "petal_length": 1.4, "petal_width": 0.2}
+predictions = predictor.predict_dataframe(pd.DataFrame([row]))
+print(predictions)
 ```
 
 The old results-CSV predictor constructor remains as a deprecated compatibility adapter.
