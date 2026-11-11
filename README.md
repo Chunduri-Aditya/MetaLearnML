@@ -2,6 +2,9 @@
 
 [![CI](https://github.com/Chunduri-Aditya/MetaLearnML/actions/workflows/ci.yml/badge.svg)](https://github.com/Chunduri-Aditya/MetaLearnML/actions/workflows/ci.yml)
 
+Choosing a pipeline for a new table costs many full cross validation runs, one for each candidate pipeline.
+MetaLearnML tests whether a learned ordering of candidates can reach a good pipeline in fewer runs.
+
 MetaLearnML is a meta-learning AutoML engine for supervised tabular data. It extracts
 dataset and pipeline meta-features to rank preprocessing/model candidates, selects a
 pipeline with development-only cross-validation, and reports performance once on an
@@ -36,6 +39,10 @@ and [aggregate summary](benchmarks/results/aggregate_summary.json). The confiden
 interval does not establish a reliable reduction in evaluations, so this repository does
 not claim a measured search speedup. The evidence-generated résumé outcome is available
 in [resume_bullets.md](benchmarks/reports/resume_bullets.md).
+
+No saving appears because random ordering already has median regret 0.001023 (`benchmarks/reports/benchmark.md` line 45, table "Ranking quality", row "Random"), so on this candidate set the learned ordering does not earn its cost.
+
+![Ranking quality from the committed benchmark](benchmarks/figures/ranking_quality.svg)
 
 ## Supported scope
 
@@ -164,6 +171,8 @@ regenerates evidence in a temporary directory and compares artifact hashes. The 
 benchmark workflow is manual and sharded; it uploads results for review and never commits
 or publishes changed evidence automatically.
 
+The benchmark run recorded this evidence from a dirty working tree (`benchmarks/reports/benchmark.md` line 64), and `python -m benchmarks.run report-check` reproduces the committed hashes.
+
 Committed evidence includes:
 
 - [dataset manifest](benchmarks/datasets.yaml) and [reviewed lock](benchmarks/datasets.lock.json);
@@ -241,3 +250,7 @@ objective rather than by a natural metric whose direction may differ.
 - Meta-ranking has a cold-start limitation when fewer than 20 compatible history rows
   exist.
 - Text columns and non-tabular tasks are unsupported.
+
+## License
+
+This project uses the [MIT License](LICENSE).
