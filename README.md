@@ -37,8 +37,7 @@ pipelines. Exhaustive search is the reference only within that fixed candidate u
 These values come directly from the committed [benchmark report](benchmarks/reports/benchmark.md)
 and [aggregate summary](benchmarks/results/aggregate_summary.json). The confidence
 interval does not establish a reliable reduction in evaluations, so this repository does
-not claim a measured search speedup. The evidence-generated résumé outcome is available
-in [resume_bullets.md](benchmarks/reports/resume_bullets.md).
+not claim a measured search speedup.
 
 No saving appears because random ordering already has median regret 0.001023 (`benchmarks/reports/benchmark.md` line 45, table "Ranking quality", row "Random"), so on this candidate set the learned ordering does not earn its cost.
 
@@ -257,6 +256,12 @@ objective rather than by a natural metric whose direction may differ.
 - Meta-ranking has a cold-start limitation when fewer than 20 compatible history rows
   exist.
 - Text columns and non-tabular tasks are unsupported.
+
+## References
+
+- Chelsea Finn, Pieter Abbeel and Sergey Levine, 2017. "Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks." https://arxiv.org/abs/1703.03400
+
+The paper is background reading on meta learning. This repository does not implement MAML.
 
 ## License
 

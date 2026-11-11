@@ -18,7 +18,6 @@ ARTIFACT_PATHS = (
     "results/per_dataset_summary.csv",
     "results/aggregate_summary.json",
     "reports/benchmark.md",
-    "reports/resume_bullets.md",
     "figures/best_so_far.svg",
     "figures/evaluations_to_95.svg",
     "figures/test_quality_delta.svg",
@@ -215,7 +214,7 @@ def build_aggregate_summary(
             "median_quality_retention": median_retention,
             "median_final_test_normalized_regret": median_test_regret,
         },
-        "impact_resume_bullet_eligible": impact_eligible,
+        "speedup_claim_eligible": impact_eligible,
     }
 
 
@@ -377,7 +376,7 @@ Exhaustive search is only the reference inside this fixed candidate universe. Pr
 - Proxy+meta median final-test normalized regret at budget 10: **{budget["median_final_test_normalized_regret"] if budget["median_final_test_normalized_regret"] is not None else "n/a"}**.
 - Failed candidate runs retained in denominators: **{summary["failures"]}**.
 
-The resume impact criterion is **{"met" if summary["impact_resume_bullet_eligible"] else "not met"}**. The criterion requires a wholly positive bootstrap interval for evaluation reduction, at least 95% median quality retention at budget 10, and no more than 0.05 median final-test normalized regret.
+The speedup claim criterion is **{"met" if summary["speedup_claim_eligible"] else "not met"}**. The criterion requires a wholly positive bootstrap interval for evaluation reduction, at least 95% median quality retention at budget 10, and no more than 0.05 median final-test normalized regret.
 
 ## Per-dataset untouched-test results
 
@@ -426,29 +425,6 @@ The conclusions apply to this named 15-dataset suite, three outer splits, and th
     path.write_text(report, encoding="utf-8")
 
 
-def write_resume_bullets(summary: dict[str, Any], path: Path) -> None:
-    primary = summary["primary_paired_comparison"]
-    retention = summary["proxy_meta_budget_10"]["median_quality_retention"]
-    if summary["impact_resume_bullet_eligible"]:
-        reduction = primary["dataset_median_reduction_fraction"]
-        bullet = (
-            "Reduced median candidate evaluations by "
-            f"{100 * reduction:.1f}% while retaining {100 * retention:.1f}% of "
-            f"exhaustive-search quality across {summary['dataset_count']} held-out tabular "
-            "datasets, using leave-one-dataset-out meta-learning evaluation with 28–36 pipelines."
-        )
-    else:
-        bullet = (
-            "Benchmarked a meta-learning-guided AutoML search across "
-            f"{summary['dataset_count']} datasets and identified the conditions under which "
-            "learned ranking did or did not outperform random and proxy baselines, with "
-            "leakage-resistant held-out evaluation and reproducible artifacts."
-        )
-    text = "# Evidence-generated resume bullet\n\n" + bullet + "\n"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-
-
 def generate_evidence(*, results_dir: str | Path, output_root: str | Path) -> None:
     results_dir = Path(results_dir)
     output_root = Path(output_root)
@@ -481,7 +457,6 @@ def generate_evidence(*, results_dir: str | Path, output_root: str | Path) -> No
         environment,
         output_root / "reports" / "benchmark.md",
     )
-    write_resume_bullets(summary, output_root / "reports" / "resume_bullets.md")
 
 
 def evidence_hashes(root: str | Path) -> dict[str, str]:

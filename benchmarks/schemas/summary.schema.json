@@ -11,7 +11,7 @@
     "candidate_count_range",
     "methods",
     "primary_paired_comparison",
-    "impact_resume_bullet_eligible"
+    "speedup_claim_eligible"
   ],
   "properties": {
     "schema_version": {"const": 1},
@@ -31,7 +31,7 @@
     },
     "methods": {"type": "object", "minProperties": 5},
     "primary_paired_comparison": {"type": "object"},
-    "impact_resume_bullet_eligible": {"type": "boolean"}
+    "speedup_claim_eligible": {"type": "boolean"}
   },
   "additionalProperties": true
 }

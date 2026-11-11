@@ -13,7 +13,7 @@ Exhaustive search is only the reference inside this fixed candidate universe. Pr
 - Proxy+meta median final-test normalized regret at budget 10: **0.0**.
 - Failed candidate runs retained in denominators: **18**.
 
-The resume impact criterion is **not met**. The criterion requires a wholly positive bootstrap interval for evaluation reduction, at least 95% median quality retention at budget 10, and no more than 0.05 median final-test normalized regret.
+The speedup claim criterion is **not met**. The criterion requires a wholly positive bootstrap interval for evaluation reduction, at least 95% median quality retention at budget 10, and no more than 0.05 median final-test normalized regret.
 
 ## Per-dataset untouched-test results
 

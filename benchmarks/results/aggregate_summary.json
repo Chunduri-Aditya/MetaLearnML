@@ -5,7 +5,6 @@
   ],
   "dataset_count": 15,
   "failures": 18,
-  "impact_resume_bullet_eligible": false,
   "methods": {
     "exhaustive": {
       "candidate_failures": 9,
@@ -94,5 +93,6 @@
     "median_final_test_normalized_regret": 0.0,
     "median_quality_retention": 1.0
   },
-  "schema_version": 1
+  "schema_version": 1,
+  "speedup_claim_eligible": false
 }

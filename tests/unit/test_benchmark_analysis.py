@@ -20,8 +20,8 @@ def test_budget_deduplication_and_universe_hash(numeric_strategy):
 def test_committed_evidence_hashes_are_complete():
     root = Path(__file__).resolve().parents[2] / "benchmarks"
     hashes = evidence_hashes(root)
-    assert len(hashes) == 9
+    assert len(hashes) == 8
     assert all(len(value) == 64 for value in hashes.values())
     summary = json.loads((root / "results" / "aggregate_summary.json").read_text())
     assert summary["dataset_count"] == 15
-    assert summary["impact_resume_bullet_eligible"] is False
+    assert summary["speedup_claim_eligible"] is False
