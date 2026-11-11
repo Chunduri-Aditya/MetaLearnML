@@ -9,10 +9,10 @@
     "exhaustive": {
       "candidate_failures": 9,
       "median_final_test_normalized_regret": 0.0,
-      "median_ndcg_at_5": 0.0823890522478567,
+      "median_ndcg_at_5": 0.08238905224785678,
       "median_normalized_regret": 0.0,
       "median_recall_at_5": 0.2,
-      "median_spearman": 0.0437876299945265,
+      "median_spearman": 0.043787629994526546,
       "normalized_regret_iqr": [
         0.0,
         0.0
@@ -22,52 +22,52 @@
     "meta": {
       "candidate_failures": 9,
       "median_final_test_normalized_regret": 0.0,
-      "median_ndcg_at_5": 0.184969702646188,
-      "median_normalized_regret": 1.1693194712968077e-07,
+      "median_ndcg_at_5": 0.18496970264618806,
+      "median_normalized_regret": 1.1693194712968075e-07,
       "median_recall_at_5": 0.4,
       "median_spearman": 0.5675675675675675,
       "normalized_regret_iqr": [
         0.0,
-        0.0075370210516169
+        0.00753702105161695
       ],
       "rows": 315
     },
     "proxy": {
       "candidate_failures": 9,
       "median_final_test_normalized_regret": 0.0,
-      "median_ndcg_at_5": 0.082329364046525,
+      "median_ndcg_at_5": 0.08232936404652508,
       "median_normalized_regret": 4.098525719395041e-06,
       "median_recall_at_5": 0.2,
-      "median_spearman": 0.0288473981246858,
+      "median_spearman": 0.02884739812468589,
       "normalized_regret_iqr": [
         0.0,
-        0.0088864428404229
+        0.008886442840422917
       ],
       "rows": 315
     },
     "proxy_meta": {
       "candidate_failures": 9,
       "median_final_test_normalized_regret": 0.0,
-      "median_ndcg_at_5": 0.1914298635186193,
+      "median_ndcg_at_5": 0.19142986351861938,
       "median_normalized_regret": 0.0,
       "median_recall_at_5": 0.4,
       "median_spearman": 0.406975996724069,
       "normalized_regret_iqr": [
         0.0,
-        0.0075370210516169
+        0.00753702105161695
       ],
       "rows": 315
     },
     "random": {
       "candidate_failures": 9,
       "median_final_test_normalized_regret": 0.0,
-      "median_ndcg_at_5": 0.04456108163666375,
-      "median_normalized_regret": 0.0010232969517336,
+      "median_ndcg_at_5": 0.04456108163666382,
+      "median_normalized_regret": 0.00102329695173368,
       "median_recall_at_5": 0.2,
-      "median_spearman": 0.0216216216216216,
+      "median_spearman": 0.021621621621621623,
       "normalized_regret_iqr": [
         8.95167333341925e-08,
-        0.03671388438443372
+        0.03671388438443379
       ],
       "rows": 315
     }

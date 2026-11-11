@@ -428,7 +428,9 @@ The conclusions apply to this named 15-dataset suite, three outer splits, and th
 def generate_evidence(*, results_dir: str | Path, output_root: str | Path) -> None:
     results_dir = Path(results_dir)
     output_root = Path(output_root)
-    methods = pd.read_csv(results_dir / "method_results.csv")
+    # pandas' default float parser is not correctly rounded and its last bits differ between
+    # arm64 and x86_64 builds; round_trip parses every value exactly on every platform.
+    methods = pd.read_csv(results_dir / "method_results.csv", float_precision="round_trip")
     environment = json.loads((results_dir / "environment.json").read_text(encoding="utf-8"))
     config = environment["configuration"]
     per_dataset = build_per_dataset_summary(methods)
